@@ -14,14 +14,28 @@ function changelogNotes(text, version) {
   return (next ? rest.slice(0, next.index) : rest).trim();
 }
 
+function releaseExists(tag) {
+  try {
+    execFileSync("gh", ["release", "view", tag], { cwd: ROOT, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const version = readVersion();
 const tag = `v${version}`;
 const zip = packagePlugin();
 const notes = changelogNotes(readFileSync(join(ROOT, "CHANGELOG.md"), "utf8"), version);
 
-execFileSync("gh", ["release", "create", tag, zip, "--title", tag, "--notes", notes], {
-  cwd: ROOT,
-  stdio: "inherit",
-});
-
-console.log(`Published ${tag}`);
+if (releaseExists(tag)) {
+  execFileSync("gh", ["release", "upload", tag, zip, "--clobber"], { cwd: ROOT, stdio: "inherit" });
+  execFileSync("gh", ["release", "edit", tag, "--notes", notes], { cwd: ROOT, stdio: "inherit" });
+  console.log(`Updated ${tag}`);
+} else {
+  execFileSync("gh", ["release", "create", tag, zip, "--title", tag, "--notes", notes], {
+    cwd: ROOT,
+    stdio: "inherit",
+  });
+  console.log(`Published ${tag}`);
+}
