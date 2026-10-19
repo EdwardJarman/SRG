@@ -1,0 +1,29 @@
+{
+  "name": "spaced-repetition-garden",
+  "version": "0.1.0",
+  "description": "Turn any note or heading into a flashcard - your vault becomes a living garden that blooms when you review on time.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "package": "node scripts/package.mjs",
+    "release": "node scripts/publish.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "flashcards",
+    "spaced-repetition",
+    "garden"
+  ],
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "obsidian": "^1.14.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

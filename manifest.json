@@ -1,0 +1,8 @@
+{
+  "id": "spaced-repetition-garden",
+  "name": "Spaced Repetition Garden",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Turn any note or heading into a flashcard. Cards you review on time bloom, neglected ones wilt - your vault becomes a living garden.",
+  "isDesktopOnly": false
+}
