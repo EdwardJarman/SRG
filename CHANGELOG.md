@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 
 - Release notes no longer drop the last line of the matching changelog section.
+- The release workflow updates an existing release instead of failing when a
+  tag is pushed again.
 
 ## [0.1.0] - 2026-10-19
 
