@@ -7,8 +7,9 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
-- Release packaging: `npm run package` builds a zip of the plugin, and a
-  GitHub Actions workflow publishes a zip for every `v*` tag.
+- Release packaging: `npm run package` builds a zip of the plugin, `npm run
+  release` publishes it to GitHub with the matching changelog entry, and a
+  GitHub Actions workflow does the same for every `v*` tag.
 
 ## [0.1.0] - 2026-10-19
 
