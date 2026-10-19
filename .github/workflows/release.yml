@@ -26,7 +26,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           ZIP="dist/spaced-repetition-garden-${VERSION}.zip"
-          NOTES="$(sed -n "/^## \[${VERSION}\]/,/^## /p" CHANGELOG.md | sed '1d;$d')"
+          NOTES="$(awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { section = 1; next }
+            section && /^## / { exit }
+            section { print }
+          ' CHANGELOG.md)"
           if [ -z "$NOTES" ]; then
             NOTES="Release ${VERSION}."
           fi

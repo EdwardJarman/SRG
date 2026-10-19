@@ -11,6 +11,10 @@ All notable changes to this project are documented here. The format is based on
   release` publishes it to GitHub with the matching changelog entry, and a
   GitHub Actions workflow does the same for every `v*` tag.
 
+### Fixed
+
+- Release notes no longer drop the last line of the matching changelog section.
+
 ## [0.1.0] - 2026-10-19
 
 ### Added
