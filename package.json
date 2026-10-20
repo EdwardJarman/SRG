@@ -9,7 +9,8 @@
     "test": "vitest run",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
     "package": "node scripts/package.mjs",
-    "release": "node scripts/publish.mjs"
+    "release": "node scripts/publish.mjs",
+    "deploy": "node scripts/deploy.mjs"
   },
   "keywords": [
     "obsidian",

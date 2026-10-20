@@ -1,11 +1,16 @@
 import { Editor, Notice, Plugin, TFile } from "obsidian";
+import { resetCard, rescheduleCard, toggleSuspended } from "./core/cardActions";
 import { buildQueue, computeStats } from "./core/stats";
 import { Card, GardenSettings } from "./core/types";
 import { GardenView, GARDEN_VIEW_TYPE } from "./garden/gardenView";
+import { ManageView, MANAGE_VIEW_TYPE } from "./garden/manageView";
 import { ReviewModal } from "./review/reviewModal";
 import { SRGSettingsTab, sanitizeSettings } from "./settings";
 import { GardenStore, GARDEN_FILE } from "./store/cardStore";
+import { ConfirmModal } from "./ui/confirmModal";
+import { RescheduleModal } from "./ui/rescheduleModal";
 import { plantFlashcard } from "./vault/cardCreator";
+import { openCardNote } from "./vault/opener";
 
 export default class SpacedRepetitionGardenPlugin extends Plugin {
   store!: GardenStore;
@@ -20,6 +25,7 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     if (this.store.loadProblem) new Notice(this.store.loadProblem, 10000);
 
     this.registerView(GARDEN_VIEW_TYPE, (leaf) => new GardenView(leaf, this));
+    this.registerView(MANAGE_VIEW_TYPE, (leaf) => new ManageView(leaf, this));
 
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
@@ -43,6 +49,12 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
       id: "open-garden",
       name: "Open garden",
       callback: () => void this.openGarden(),
+    });
+
+    this.addCommand({
+      id: "manage-plants",
+      name: "Manage plants",
+      callback: () => void this.openManage(),
     });
 
     this.registerEvent(
@@ -75,13 +87,21 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
   }
 
   async openGarden(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(GARDEN_VIEW_TYPE);
+    await this.openView(GARDEN_VIEW_TYPE);
+  }
+
+  async openManage(): Promise<void> {
+    await this.openView(MANAGE_VIEW_TYPE);
+  }
+
+  private async openView(viewType: string): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(viewType);
     if (existing.length > 0) {
       this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getLeaf("tab");
-    await leaf.setViewState({ type: GARDEN_VIEW_TYPE, active: true });
+    await leaf.setViewState({ type: viewType, active: true });
     this.app.workspace.revealLeaf(leaf);
   }
 
@@ -103,6 +123,50 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
   openCardReview(card: Card): void {
     const latest = this.store.getCard(card.id) ?? card;
     new ReviewModal(this.app, this.store, () => this.settings, [latest]).open();
+  }
+
+  openCardNote(card: Card): void {
+    void openCardNote(this.app, card);
+  }
+
+  toggleCardSuspended(card: Card): void {
+    const latest = this.store.getCard(card.id) ?? card;
+    this.store.upsert(toggleSuspended(latest, Date.now()));
+  }
+
+  rescheduleCard(card: Card): void {
+    const latest = this.store.getCard(card.id) ?? card;
+    new RescheduleModal(this.app, latest, this.settings.dayStartHour, (due) => {
+      const current = this.store.getCard(card.id) ?? latest;
+      this.store.upsert(rescheduleCard(current, due, Date.now()));
+    }).open();
+  }
+
+  resetCardProgress(card: Card): void {
+    const latest = this.store.getCard(card.id) ?? card;
+    new ConfirmModal(
+      this.app,
+      "Reset progress",
+      `Put "${latest.title || latest.file}" back to a seed? Its reviews and interval are cleared, the note is untouched.`,
+      "Reset",
+      () => {
+        const current = this.store.getCard(card.id) ?? latest;
+        this.store.upsert(resetCard(current, Date.now()));
+      },
+    ).open();
+  }
+
+  removeCard(card: Card): void {
+    const latest = this.store.getCard(card.id) ?? card;
+    new ConfirmModal(
+      this.app,
+      "Remove plant",
+      `Remove "${latest.title || latest.file}" and its scheduling history? The note itself is left alone.`,
+      "Remove",
+      () => {
+        this.store.deleteCard(card.id);
+      },
+    ).open();
   }
 
   updateStatusBar(): void {

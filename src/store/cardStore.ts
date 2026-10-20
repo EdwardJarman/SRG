@@ -133,6 +133,19 @@ export class GardenStore {
     this.markDirty();
   }
 
+  undoReview(dayKey: string, wasAgain: boolean): void {
+    const entry: DayStats | undefined = this.data.daily[dayKey];
+    if (!entry) return;
+    entry.reviews = Math.max(0, entry.reviews - 1);
+    if (wasAgain) entry.again = Math.max(0, entry.again - 1);
+    if (entry.reviews === 0) {
+      delete this.data.daily[dayKey];
+    } else {
+      this.data.daily[dayKey] = entry;
+    }
+    this.markDirty();
+  }
+
   repointFile(oldPath: string, newPath: string): void {
     let changed = false;
     for (const card of Object.values(this.data.cards)) {

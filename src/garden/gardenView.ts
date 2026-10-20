@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, WorkspaceLeaf } from "obsidian";
 import { computeStats } from "../core/stats";
 import type SpacedRepetitionGardenPlugin from "../main";
 import {
@@ -8,6 +8,7 @@ import {
   PlacedPlant,
 } from "./layout";
 import { buildPlantModel, PlantModel, plantStatusText } from "./plantModel";
+import { addCardActions } from "./cardMenu";
 import { findPlantAt, GardenPalette, paletteForTheme, renderGarden } from "./renderer";
 
 export const GARDEN_VIEW_TYPE = "spaced-repetition-garden-view";
@@ -27,6 +28,7 @@ export class GardenView extends ItemView {
   private streakChipEl: HTMLElement | null = null;
   private retentionChipEl: HTMLElement | null = null;
   private reviewBtn: HTMLButtonElement | null = null;
+  private manageBtn: HTMLButtonElement | null = null;
 
   private layout: GardenLayout = emptyGardenLayout();
   private models: PlantModel[] = [];
@@ -78,6 +80,8 @@ export class GardenView extends ItemView {
     this.retentionChipEl = chips.createSpan({ cls: "srg-chip" });
     this.reviewBtn = hud.createEl("button", { cls: "srg-garden-review mod-cta", text: "Review due" });
     this.registerDomEvent(this.reviewBtn, "click", () => this.plugin.openReviewDue());
+    this.manageBtn = hud.createEl("button", { cls: "srg-garden-manage", text: "Manage" });
+    this.registerDomEvent(this.manageBtn, "click", () => void this.plugin.openManage());
 
     const wrap = root.createDiv({ cls: "srg-garden-canvas-wrap" });
     this.emptyEl = wrap.createDiv({ cls: "srg-garden-empty srg-hidden" });
@@ -103,6 +107,7 @@ export class GardenView extends ItemView {
       this.registerDomEvent(this.canvas, "pointerup", this.onPointerUp);
       this.registerDomEvent(this.canvas, "pointercancel", this.onPointerCancel);
       this.registerDomEvent(this.canvas, "pointerleave", this.onPointerLeave);
+      this.registerDomEvent(this.canvas, "contextmenu", this.onContextMenu);
       this.registerDomEvent(this.canvas, "wheel", this.onWheel, { passive: false });
     }
     this.registerEvent(this.app.workspace.on("resize", this.onWorkspaceResize));
@@ -341,6 +346,16 @@ export class GardenView extends ItemView {
     this.userMoved = true;
     this.needsRender = true;
     this.repositionTooltip();
+  };
+
+  private onContextMenu = (evt: MouseEvent): void => {
+    evt.preventDefault();
+    const world = this.toWorld(evt.offsetX, evt.offsetY);
+    const plant = findPlantAt(this.layout, world.x, world.y);
+    if (!plant) return;
+    const menu = new Menu();
+    addCardActions(menu, this.plugin, plant.model.card);
+    menu.showAtMouseEvent(evt);
   };
 
   private onWorkspaceResize = (): void => {

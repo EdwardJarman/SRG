@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- Card management: right-click a plant in the garden to review it, open its
+  note, suspend it, reschedule it, reset its progress or remove it.
+- A "Manage plants" view listing every card with search, a bed filter and a
+  state filter, and per-card actions.
+- Review queue: undo the last grade, put a card off until tomorrow, or
+  reschedule it to a date you pick.
+- `npm run deploy` builds the plugin and copies it straight into a vault.
 - Release packaging: `npm run package` builds a zip of the plugin, `npm run
   release` publishes it to GitHub with the matching changelog entry, and a
   GitHub Actions workflow does the same for every `v*` tag.
@@ -18,6 +25,8 @@ All notable changes to this project are documented here. The format is based on
   tag is pushed again.
 - `npm run release` updates the existing release instead of failing when the
   tag has already been published.
+- Undoing a grade keeps the card's relinked heading and its review history
+  intact.
 
 ## [0.1.0] - 2026-10-19
 

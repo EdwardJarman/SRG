@@ -1,14 +1,23 @@
 import { App, Component, MarkdownRenderer, Modal } from "obsidian";
+import { postponeCard, rescheduleCard } from "../core/cardActions";
 import { logicalDayEnd, logicalDayKey } from "../core/dates";
 import { applyReview, previewIntervals } from "../core/scheduler";
 import { buildQueue, countDue, overdueDays } from "../core/stats";
 import { Card, Grade, GRADES, GRADE_HOTKEYS, GRADE_LABELS, GardenSettings } from "../core/types";
 import { GardenStore } from "../store/cardStore";
+import { ConfirmModal } from "../ui/confirmModal";
+import { RescheduleModal } from "../ui/rescheduleModal";
 import { openCardNote } from "../vault/opener";
 import { resolveCard } from "../vault/resolver";
 
 function formatDays(days: number): string {
   return days === 1 ? "1 day" : `${days} days`;
+}
+
+interface LastGrade {
+  card: Card;
+  wasAgain: boolean;
+  dayKey: string;
 }
 
 export class ReviewModal extends Modal {
@@ -19,6 +28,8 @@ export class ReviewModal extends Modal {
   private pendingAnswer: string | null = null;
   private reviewed = 0;
   private again = 0;
+  private postponed = 0;
+  private lastGrade: LastGrade | null = null;
   private renderComponent = new Component();
   private gradeButtons = new Map<Grade, HTMLButtonElement>();
 
@@ -31,6 +42,10 @@ export class ReviewModal extends Modal {
   private answerEl!: HTMLElement;
   private showBtn!: HTMLButtonElement;
   private gradesEl!: HTMLElement;
+  private secondaryEl!: HTMLElement;
+  private undoBtn!: HTMLButtonElement;
+  private postponeBtn!: HTMLButtonElement;
+  private rescheduleBtn!: HTMLButtonElement;
   private errorEl!: HTMLElement;
   private summaryEl!: HTMLElement;
 
@@ -82,6 +97,14 @@ export class ReviewModal extends Modal {
       this.gradeButtons.set(grade, button);
     }
 
+    this.secondaryEl = root.createDiv({ cls: "srg-secondary srg-hidden" });
+    this.undoBtn = this.secondaryEl.createEl("button", { text: "Undo last grade" });
+    this.undoBtn.addEventListener("click", () => this.undoLastGrade());
+    this.postponeBtn = this.secondaryEl.createEl("button", { text: "Not today" });
+    this.postponeBtn.addEventListener("click", () => this.postponeCurrent());
+    this.rescheduleBtn = this.secondaryEl.createEl("button", { text: "Reschedule..." });
+    this.rescheduleBtn.addEventListener("click", () => this.rescheduleCurrent());
+
     this.errorEl = root.createDiv({ cls: "srg-error srg-hidden" });
     this.summaryEl = root.createDiv({ cls: "srg-summary srg-hidden" });
 
@@ -100,6 +123,11 @@ export class ReviewModal extends Modal {
         return false;
       });
     }
+    this.scope.register(["Mod"], "z", (evt) => {
+      evt.preventDefault();
+      this.undoLastGrade();
+      return false;
+    });
 
     void this.showNext();
   }
@@ -160,6 +188,10 @@ export class ReviewModal extends Modal {
     this.errorEl.addClass("srg-hidden");
     this.errorEl.empty();
     this.showBtn.removeClass("srg-hidden");
+    this.secondaryEl.removeClass("srg-hidden");
+    this.postponeBtn.removeClass("srg-hidden");
+    this.rescheduleBtn.removeClass("srg-hidden");
+    this.updateUndoButton();
 
     this.promptEl.setText("...");
     this.cardStateEl.setText("");
@@ -189,6 +221,8 @@ export class ReviewModal extends Modal {
     this.blocked = true;
     this.promptEl.setText(next.title || next.file);
     this.showBtn.addClass("srg-hidden");
+    this.postponeBtn.addClass("srg-hidden");
+    this.rescheduleBtn.addClass("srg-hidden");
     const message =
       resolved.status === "missing-file"
         ? "The note for this plant is missing. It may have been moved, renamed or deleted."
@@ -200,9 +234,15 @@ export class ReviewModal extends Modal {
     skip.addEventListener("click", () => void this.showNext());
     const remove = actions.createEl("button", { text: "Remove plant" });
     remove.addEventListener("click", () => {
-      if (window.confirm("Remove this plant and its scheduling history?")) {
-        this.store.deleteCard(next.id);
-      }
+      new ConfirmModal(
+        this.app,
+        "Remove plant",
+        `Remove "${next.title || next.file}" and its scheduling history? The note itself is left alone.`,
+        "Remove",
+        () => {
+          this.store.deleteCard(next.id);
+        },
+      ).open();
       void this.showNext();
     });
   }
@@ -223,20 +263,66 @@ export class ReviewModal extends Modal {
 
   private handleGrade(grade: Grade): void {
     if (!this.revealed || this.blocked || !this.current) return;
-    const card = this.current;
     const settings = this.getSettings();
     const now = Date.now();
+    const dayKey = logicalDayKey(now, settings.dayStartHour);
+    const card = this.store.getCard(this.current.id) ?? this.current;
 
     const updated = applyReview(card, grade, { now, dayStartHour: settings.dayStartHour });
     this.store.upsert(updated);
-    this.store.recordReview(logicalDayKey(now, settings.dayStartHour), grade === 1);
+    this.store.recordReview(dayKey, grade === 1);
     this.reviewed += 1;
     if (grade === 1) {
       this.again += 1;
       this.queue.push(updated);
     }
+    this.lastGrade = { card, wasAgain: grade === 1, dayKey };
+    this.updateUndoButton();
 
     void this.showNext();
+  }
+
+  private undoLastGrade(): void {
+    const last = this.lastGrade;
+    if (!last) return;
+
+    this.store.upsert(last.card);
+    this.store.undoReview(last.dayKey, last.wasAgain);
+    this.reviewed = Math.max(0, this.reviewed - 1);
+    if (last.wasAgain) this.again = Math.max(0, this.again - 1);
+    this.lastGrade = null;
+    this.updateUndoButton();
+
+    this.queue = this.queue.filter((entry) => entry.id !== last.card.id);
+    this.queue.unshift(last.card);
+
+    void this.showNext();
+  }
+
+  private postponeCurrent(): void {
+    if (!this.current || this.blocked) return;
+    const card = this.store.getCard(this.current.id) ?? this.current;
+    const updated = postponeCard(card, Date.now(), this.getSettings().dayStartHour);
+    this.store.upsert(updated);
+    this.postponed += 1;
+    void this.showNext();
+  }
+
+  private rescheduleCurrent(): void {
+    const current = this.current;
+    if (!current) return;
+    const card = this.store.getCard(current.id) ?? current;
+    new RescheduleModal(this.app, card, this.getSettings().dayStartHour, (due) => {
+      const latest = this.store.getCard(card.id) ?? card;
+      this.store.upsert(rescheduleCard(latest, due, Date.now()));
+      void this.showNext();
+    }).open();
+  }
+
+  private updateUndoButton(): void {
+    if (!this.undoBtn) return;
+    if (this.lastGrade) this.undoBtn.removeClass("srg-hidden");
+    else this.undoBtn.addClass("srg-hidden");
   }
 
   private renderSummary(): void {
@@ -249,6 +335,10 @@ export class ReviewModal extends Modal {
     this.gradesEl.addClass("srg-hidden");
     this.showBtn.addClass("srg-hidden");
     this.errorEl.addClass("srg-hidden");
+    this.secondaryEl.removeClass("srg-hidden");
+    this.postponeBtn.addClass("srg-hidden");
+    this.rescheduleBtn.addClass("srg-hidden");
+    this.updateUndoButton();
     this.fileEl.setText("");
     this.openNoteBtn.addClass("srg-hidden");
     this.metaRightEl.setText("Session complete");
@@ -261,7 +351,7 @@ export class ReviewModal extends Modal {
     this.summaryEl.createEl("div", {
       text: `Reviewed ${this.reviewed} ${this.reviewed === 1 ? "plant" : "plants"}${
         this.again > 0 ? `, ${this.again} sent back to the soil` : ""
-      }.`,
+      }${this.postponed > 0 ? `, ${this.postponed} put off for later` : ""}.`,
       cls: "srg-summary-title",
     });
     this.summaryEl.createDiv({
