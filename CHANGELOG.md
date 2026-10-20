@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format is based on
 - Review queue: undo the last grade, put a card off until tomorrow, or
   reschedule it to a date you pick.
 - `npm run deploy` builds the plugin and copies it straight into a vault.
+- The README now covers managing plants and the new review controls.
 - Release packaging: `npm run package` builds a zip of the plugin, `npm run
   release` publishes it to GitHub with the matching changelog entry, and a
   GitHub Actions workflow does the same for every `v*` tag.
