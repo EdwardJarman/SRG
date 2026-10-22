@@ -1,19 +1,17 @@
 import { Editor, Notice, Plugin, TFile } from "obsidian";
-import { resetCard, rescheduleCard, toggleSuspended } from "./core/cardActions";
 import { buildQueue, computeStats } from "./core/stats";
 import { Card, GardenSettings } from "./core/types";
 import { GardenView, GARDEN_VIEW_TYPE } from "./garden/gardenView";
 import { ManageView, MANAGE_VIEW_TYPE } from "./garden/manageView";
 import { ReviewModal } from "./review/reviewModal";
+import { CardService } from "./services/cardService";
 import { SRGSettingsTab, sanitizeSettings } from "./settings";
 import { GardenStore, GARDEN_FILE } from "./store/cardStore";
-import { ConfirmModal } from "./ui/confirmModal";
-import { RescheduleModal } from "./ui/rescheduleModal";
 import { plantFlashcard } from "./vault/cardCreator";
-import { openCardNote } from "./vault/opener";
 
 export default class SpacedRepetitionGardenPlugin extends Plugin {
   store!: GardenStore;
+  cards!: CardService;
   settings: GardenSettings = sanitizeSettings(null);
   private statusBarEl: HTMLElement | null = null;
 
@@ -23,6 +21,7 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     this.store = new GardenStore(this.app, GARDEN_FILE);
     await this.store.load();
     if (this.store.loadProblem) new Notice(this.store.loadProblem, 10000);
+    this.cards = new CardService(this.app, this.store, () => this.settings);
 
     this.registerView(GARDEN_VIEW_TYPE, (leaf) => new GardenView(leaf, this));
     this.registerView(MANAGE_VIEW_TYPE, (leaf) => new ManageView(leaf, this));
@@ -30,6 +29,26 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
         this.store.repointFile(oldPath, file.path);
+      }),
+    );
+
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (!(file instanceof TFile)) return;
+        const affected = this.store.getCards().filter((card) => card.file === file.path);
+        if (affected.length === 0) return;
+        this.store.setFileMissing(file.path, true);
+        new Notice(
+          `${affected.length} ${affected.length === 1 ? "plant" : "plants"} lost their note and are held back. Restore the note or remove them in Manage plants.`,
+          8000,
+        );
+      }),
+    );
+
+    this.registerEvent(
+      this.app.vault.on("create", (file) => {
+        if (!(file instanceof TFile)) return;
+        this.store.setFileMissing(file.path, false);
       }),
     );
 
@@ -75,6 +94,11 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     this.registerInterval(window.setInterval(() => this.updateStatusBar(), 5 * 60 * 1000));
     this.updateStatusBar();
 
+    this.registerDomEvent(window, "blur", () => void this.store.flush());
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (document.hidden) void this.store.flush();
+    });
+
     this.addSettingTab(new SRGSettingsTab(this.app, this));
   }
 
@@ -117,56 +141,12 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
       new Notice("Nothing is due - your garden is at peace.");
       return;
     }
-    new ReviewModal(this.app, this.store, () => this.settings).open();
+    new ReviewModal(this.app, this.cards).open();
   }
 
   openCardReview(card: Card): void {
     const latest = this.store.getCard(card.id) ?? card;
-    new ReviewModal(this.app, this.store, () => this.settings, [latest]).open();
-  }
-
-  openCardNote(card: Card): void {
-    void openCardNote(this.app, card);
-  }
-
-  toggleCardSuspended(card: Card): void {
-    const latest = this.store.getCard(card.id) ?? card;
-    this.store.upsert(toggleSuspended(latest, Date.now()));
-  }
-
-  rescheduleCard(card: Card): void {
-    const latest = this.store.getCard(card.id) ?? card;
-    new RescheduleModal(this.app, latest, this.settings.dayStartHour, (due) => {
-      const current = this.store.getCard(card.id) ?? latest;
-      this.store.upsert(rescheduleCard(current, due, Date.now()));
-    }).open();
-  }
-
-  resetCardProgress(card: Card): void {
-    const latest = this.store.getCard(card.id) ?? card;
-    new ConfirmModal(
-      this.app,
-      "Reset progress",
-      `Put "${latest.title || latest.file}" back to a seed? Its reviews and interval are cleared, the note is untouched.`,
-      "Reset",
-      () => {
-        const current = this.store.getCard(card.id) ?? latest;
-        this.store.upsert(resetCard(current, Date.now()));
-      },
-    ).open();
-  }
-
-  removeCard(card: Card): void {
-    const latest = this.store.getCard(card.id) ?? card;
-    new ConfirmModal(
-      this.app,
-      "Remove plant",
-      `Remove "${latest.title || latest.file}" and its scheduling history? The note itself is left alone.`,
-      "Remove",
-      () => {
-        this.store.deleteCard(card.id);
-      },
-    ).open();
+    new ReviewModal(this.app, this.cards, [latest]).open();
   }
 
   updateStatusBar(): void {

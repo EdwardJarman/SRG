@@ -102,6 +102,7 @@ function sanitizeCard(id: string, raw: unknown): Card | null {
     lastReview: toNullableTimestamp(raw.lastReview),
     firstReview: toNullableTimestamp(raw.firstReview),
     suspended: raw.suspended === true,
+    missing: raw.missing === true,
     updatedAt,
   };
 }

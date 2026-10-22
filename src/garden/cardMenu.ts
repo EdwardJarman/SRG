@@ -3,6 +3,7 @@ import { Card } from "../core/types";
 import type SpacedRepetitionGardenPlugin from "../main";
 
 export function addCardActions(menu: Menu, plugin: SpacedRepetitionGardenPlugin, card: Card): void {
+  const service = plugin.cards;
   menu.addItem((item) =>
     item
       .setTitle("Review now")
@@ -13,30 +14,30 @@ export function addCardActions(menu: Menu, plugin: SpacedRepetitionGardenPlugin,
     item
       .setTitle("Open note")
       .setIcon("file-text")
-      .onClick(() => plugin.openCardNote(card)),
+      .onClick(() => service.openNote(card)),
   );
   menu.addItem((item) =>
     item
       .setTitle(card.suspended ? "Resume plant" : "Suspend plant")
       .setIcon(card.suspended ? "play-circle" : "pause")
-      .onClick(() => plugin.toggleCardSuspended(card)),
+      .onClick(() => service.toggleSuspended(card)),
   );
   menu.addItem((item) =>
     item
       .setTitle("Reschedule...")
       .setIcon("calendar")
-      .onClick(() => plugin.rescheduleCard(card)),
+      .onClick(() => service.reschedule(card)),
   );
   menu.addItem((item) =>
     item
       .setTitle("Reset progress")
       .setIcon("rotate-ccw")
-      .onClick(() => plugin.resetCardProgress(card)),
+      .onClick(() => service.resetProgress(card)),
   );
   menu.addItem((item) =>
     item
       .setTitle("Remove plant")
       .setIcon("trash")
-      .onClick(() => plugin.removeCard(card)),
+      .onClick(() => service.remove(card)),
   );
 }

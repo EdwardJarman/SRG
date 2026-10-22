@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
+import { syncManifestVersion } from "./version.mjs";
 
 export const PLUGIN_ID = "spaced-repetition-garden";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -35,6 +36,7 @@ export function packagePlugin() {
   const stage = join(dist, PLUGIN_ID);
   const zipPath = join(dist, `${PLUGIN_ID}-${version}.zip`);
 
+  syncManifestVersion(version);
   run(process.execPath, [join(ROOT, "esbuild.config.mjs"), "production"]);
 
   rmSync(dist, { recursive: true, force: true });

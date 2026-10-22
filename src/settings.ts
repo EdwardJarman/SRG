@@ -19,6 +19,7 @@ export function sanitizeSettings(raw: Partial<GardenSettings> | null | undefined
     newCardsPerDay: clampInt(source.newCardsPerDay, 0, 200, DEFAULT_SETTINGS.newCardsPerDay),
     dayStartHour: dayStart,
     retentionWindowDays: clampInt(source.retentionWindowDays, 1, 365, DEFAULT_SETTINGS.retentionWindowDays),
+    burySiblings: typeof source.burySiblings === "boolean" ? source.burySiblings : DEFAULT_SETTINGS.burySiblings,
   };
 }
 
@@ -71,6 +72,18 @@ export class SRGSettingsTab extends PluginSettingTab {
           this.plugin.settings = sanitizeSettings({ ...this.plugin.settings, retentionWindowDays: parsed });
           await this.plugin.saveSettings();
           this.plugin.updateStatusBar();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Bury siblings after a lapse")
+      .setDesc(
+        "When a plant lapses, hold back the other plants from the same note until the next session.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.burySiblings).onChange(async (value) => {
+          this.plugin.settings = sanitizeSettings({ ...this.plugin.settings, burySiblings: value });
+          await this.plugin.saveSettings();
         }),
       );
 

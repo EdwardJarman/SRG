@@ -215,7 +215,7 @@ export class ManageView extends ItemView {
     const review = actions.createEl("button", { text: "Review" });
     review.addEventListener("click", () => this.plugin.openCardReview(card));
     const open = actions.createEl("button", { text: "Open" });
-    open.addEventListener("click", () => this.plugin.openCardNote(card));
+    open.addEventListener("click", () => this.plugin.cards.openNote(card));
     const more = actions.createEl("button", { text: "More" });
     more.addEventListener("click", (evt) => {
       const menu = new Menu();

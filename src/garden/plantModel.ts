@@ -58,6 +58,7 @@ export function buildPlantModel(card: Card, now: number, dayStartHour: number): 
 }
 
 export function plantStatusText(model: PlantModel): string {
+  if (model.card.missing) return "Note missing - held back";
   if (model.stage === "seed") {
     return model.daysUntilDue <= 0 ? "Seed - ready to plant" : `Seed - due in ${model.daysUntilDue}d`;
   }

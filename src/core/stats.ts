@@ -10,7 +10,7 @@ export interface StatsSummary {
 
 export function countDue(cards: Card[], now: number, dayStartHour: number): number {
   const end = logicalDayEnd(now, dayStartHour);
-  return cards.filter((card) => !card.suspended && card.due < end).length;
+  return cards.filter((card) => !card.suspended && !card.missing && card.due < end).length;
 }
 
 export function overdueDays(due: number, now: number, dayStartHour: number): number {
@@ -18,11 +18,13 @@ export function overdueDays(due: number, now: number, dayStartHour: number): num
 }
 
 export function buildQueue(cards: Card[], now: number, dayStartHour: number, newCardsPerDay: number): Card[] {
-  const active = cards.filter((card) => !card.suspended);
+  const active = cards.filter((card) => !card.suspended && !card.missing);
   const end = logicalDayEnd(now, dayStartHour);
 
+  // Anything that has been seen before and is due counts as a review, even if
+  // it lapsed and came back to zero reps.
   const reviewable = active
-    .filter((card) => card.reps > 0 && card.due < end)
+    .filter((card) => card.due < end && (card.reps > 0 || card.firstReview !== null))
     .sort((a, b) => a.due - b.due || a.created - b.created);
 
   const todayKey = logicalDayKey(now, dayStartHour);
@@ -31,8 +33,10 @@ export function buildQueue(cards: Card[], now: number, dayStartHour: number, new
   ).length;
   const quota = Math.max(0, newCardsPerDay - introducedToday);
 
+  // Only cards that have never been reviewed are held back by the quota, so a
+  // card that lapsed never takes a slot meant for a new one.
   const fresh = active
-    .filter((card) => card.reps === 0)
+    .filter((card) => card.firstReview === null)
     .sort((a, b) => a.created - b.created)
     .slice(0, quota);
 

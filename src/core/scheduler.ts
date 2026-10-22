@@ -35,6 +35,7 @@ export function createCard(spec: NewCardSpec): Card {
     lastReview: null,
     firstReview: null,
     suspended: false,
+    missing: false,
     updatedAt: spec.now,
   };
 }

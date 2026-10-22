@@ -13,11 +13,24 @@ All notable changes to this project are documented here. The format is based on
   state filter, and per-card actions.
 - Review queue: undo the last grade, put a card off until tomorrow, or
   reschedule it to a date you pick.
+- A "Bury siblings after a lapse" setting: when a plant lapses, the other
+  plants from the same note wait for the next session.
+- Plants whose note was deleted are held back and shown as missing, instead of
+  piling up as overdue.
 - `npm run deploy` builds the plugin and copies it straight into a vault.
 - The README now covers managing plants and the new review controls.
 - Release packaging: `npm run package` builds a zip of the plugin, `npm run
   release` publishes it to GitHub with the matching changelog entry, and a
   GitHub Actions workflow does the same for every `v*` tag.
+
+### Changed
+
+- Undo now steps back through the whole session, not just the last grade.
+- A selection that runs over several paragraphs plants the section it sits in
+  rather than only its last paragraph.
+- The release flow takes the version from `package.json`, writes it into
+  `manifest.json` and `versions.json`, tags the commit and publishes the zip.
+- The manifest names its author.
 
 ### Fixed
 
@@ -28,6 +41,12 @@ All notable changes to this project are documented here. The format is based on
   tag has already been published.
 - Undoing a grade keeps the card's relinked heading and its review history
   intact.
+- A crash that left a temp file beside a good one no longer loses the cards
+  that were only in the older file.
+- A lapsed plant no longer takes a slot meant for a new one in the daily quota.
+- Review history is written to disk when the window loses focus, not only when
+  Obsidian quits.
+- A published release now always carries the version it was tagged with.
 
 ## [0.1.0] - 2026-10-19
 

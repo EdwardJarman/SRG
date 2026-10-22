@@ -1,5 +1,11 @@
 import { App } from "obsidian";
-import { DATA_VERSION, deserializeGardenData, emptyGardenData, serializeGardenData } from "../core/persistence";
+import {
+  DATA_VERSION,
+  deserializeGardenData,
+  emptyGardenData,
+  mergeGardenData,
+  serializeGardenData,
+} from "../core/persistence";
 import { pathsEqual } from "../core/sections";
 import { Anchor, Card, DayStats, GardenData } from "../core/types";
 
@@ -15,7 +21,7 @@ export class GardenStore {
 
   private data: GardenData = emptyGardenData();
   private listeners = new Set<Listener>();
-  private saveTimer: number | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private writeChain: Promise<void> = Promise.resolve();
   private dirty = false;
   private persistenceDisabled = false;
@@ -49,27 +55,38 @@ export class GardenStore {
       this.persistenceDisabled = true;
     }
 
-    if (raw !== null) {
-      const parsed = deserializeGardenData(raw);
-      if (parsed) {
-        this.data = parsed;
-        await this.removeTmp();
-        this.emit();
-        return;
+    const tmpRaw = await this.readTmp();
+    const mainData = raw === null ? null : deserializeGardenData(raw);
+    const tmpData = tmpRaw === null ? null : deserializeGardenData(tmpRaw);
+
+    if (mainData && tmpData) {
+      // A crash can leave a temp file beside a good one. Keep both rather than
+      // throwing away whichever was written first.
+      const merged = mergeGardenData(mainData, tmpData);
+      this.data = merged;
+      await this.removeTmp();
+      if (serializeGardenData(merged) !== serializeGardenData(mainData)) {
+        this.markDirty();
       }
+      this.emit();
+      return;
     }
 
-    const tmpRaw = await this.readTmp();
-    const parsedTmp = tmpRaw === null ? null : deserializeGardenData(tmpRaw);
-    if (parsedTmp) {
-      this.data = parsedTmp;
+    if (mainData) {
+      this.data = mainData;
+      await this.removeTmp();
+      this.emit();
+      return;
+    }
+
+    if (tmpData) {
+      this.data = tmpData;
       this.markDirty();
       this.emit();
       return;
     }
 
-    if (rawExisted && raw !== null) {
-      const version = tryReadVersion(raw);
+    if (rawExisted && raw !== null) {      const version = tryReadVersion(raw);
       if (version !== null && version > DATA_VERSION) {
         this.persistenceDisabled = true;
         this.loadProblem = `${this.path} was written by a newer version of the plugin. It is loaded read-only; changes will not be saved.`;
@@ -161,6 +178,25 @@ export class GardenStore {
     if (changed) this.markDirty();
   }
 
+  setFileMissing(filePath: string, missing: boolean): void {
+    let changed = false;
+    for (const card of Object.values(this.data.cards)) {
+      if (card.file !== filePath || card.missing === missing) continue;
+      card.missing = missing;
+      card.updatedAt = Date.now();
+      changed = true;
+    }
+    if (changed) this.markDirty();
+  }
+
+  clearMissing(cardId: string): void {
+    const card = this.data.cards[cardId];
+    if (!card || !card.missing) return;
+    card.missing = false;
+    card.updatedAt = Date.now();
+    this.markDirty();
+  }
+
   onChange(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -170,7 +206,7 @@ export class GardenStore {
 
   async flush(): Promise<void> {
     if (this.saveTimer !== null) {
-      window.clearTimeout(this.saveTimer);
+      clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
     if (this.persistenceDisabled || !this.dirty) return;
@@ -187,7 +223,7 @@ export class GardenStore {
     this.dirty = true;
     this.emit();
     if (this.persistenceDisabled || this.saveTimer !== null) return;
-    this.saveTimer = window.setTimeout(() => {
+    this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       void this.flush();
     }, SAVE_DEBOUNCE_MS);

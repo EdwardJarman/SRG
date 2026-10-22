@@ -1,35 +1,21 @@
 import { App, Component, MarkdownRenderer, Modal } from "obsidian";
-import { postponeCard, rescheduleCard } from "../core/cardActions";
-import { logicalDayEnd, logicalDayKey } from "../core/dates";
-import { applyReview, previewIntervals } from "../core/scheduler";
+import { logicalDayEnd } from "../core/dates";
+import { ReviewSession } from "../core/reviewSession";
+import { previewIntervals } from "../core/scheduler";
 import { buildQueue, countDue, overdueDays } from "../core/stats";
-import { Card, Grade, GRADES, GRADE_HOTKEYS, GRADE_LABELS, GardenSettings } from "../core/types";
-import { GardenStore } from "../store/cardStore";
-import { ConfirmModal } from "../ui/confirmModal";
-import { RescheduleModal } from "../ui/rescheduleModal";
-import { openCardNote } from "../vault/opener";
+import { Card, Grade, GRADES, GRADE_HOTKEYS, GRADE_LABELS } from "../core/types";
+import { CardService } from "../services/cardService";
 import { resolveCard } from "../vault/resolver";
 
 function formatDays(days: number): string {
   return days === 1 ? "1 day" : `${days} days`;
 }
 
-interface LastGrade {
-  card: Card;
-  wasAgain: boolean;
-  dayKey: string;
-}
-
 export class ReviewModal extends Modal {
-  private queue: Card[];
-  private current: Card | null = null;
+  private readonly session: ReviewSession;
   private revealed = false;
   private blocked = false;
   private pendingAnswer: string | null = null;
-  private reviewed = 0;
-  private again = 0;
-  private postponed = 0;
-  private lastGrade: LastGrade | null = null;
   private renderComponent = new Component();
   private gradeButtons = new Map<Grade, HTMLButtonElement>();
 
@@ -51,17 +37,20 @@ export class ReviewModal extends Modal {
 
   constructor(
     app: App,
-    private store: GardenStore,
-    private getSettings: () => GardenSettings,
+    private readonly service: CardService,
     initialQueue?: Card[],
   ) {
     super(app);
-    if (initialQueue && initialQueue.length > 0) {
-      this.queue = [...initialQueue];
-    } else {
-      const settings = getSettings();
-      this.queue = buildQueue(this.store.getCards(), Date.now(), settings.dayStartHour, settings.newCardsPerDay);
-    }
+    const queue =
+      initialQueue && initialQueue.length > 0
+        ? initialQueue
+        : buildQueue(
+            service.getCards(),
+            Date.now(),
+            service.getSettings().dayStartHour,
+            service.getSettings().newCardsPerDay,
+          );
+    this.session = new ReviewSession(service, queue);
   }
 
   onOpen(): void {
@@ -77,7 +66,8 @@ export class ReviewModal extends Modal {
     this.fileEl = this.metaLeftEl.createSpan({ cls: "srg-meta-file" });
     this.openNoteBtn = this.metaLeftEl.createEl("button", { cls: "srg-link-btn", text: "Open note" });
     this.openNoteBtn.addEventListener("click", () => {
-      if (this.current) void openCardNote(this.app, this.current);
+      const current = this.session.current;
+      if (current) this.service.openNote(current);
     });
     this.metaRightEl = meta.createSpan({ cls: "srg-meta-right" });
 
@@ -134,7 +124,7 @@ export class ReviewModal extends Modal {
 
   onClose(): void {
     this.renderComponent.unload();
-    void this.store.flush();
+    this.service.flush();
   }
 
   private handlePrimary(): void {
@@ -146,14 +136,14 @@ export class ReviewModal extends Modal {
   }
 
   private async reveal(): Promise<void> {
-    if (this.revealed || this.blocked || !this.current) return;
+    if (this.revealed || this.blocked || !this.session.current) return;
     this.revealed = true;
     this.showBtn.addClass("srg-hidden");
     this.gradesEl.removeClass("srg-hidden");
     this.answerEl.removeClass("srg-hidden");
     this.answerEl.empty();
 
-    const card = this.current;
+    const card = this.session.current;
     const answer = this.pendingAnswer ?? "(No content.)";
     try {
       await MarkdownRenderer.render(this.app, answer, this.answerEl, card.file, this.renderComponent);
@@ -162,7 +152,7 @@ export class ReviewModal extends Modal {
       this.answerEl.setText(answer);
     }
 
-    const previews = previewIntervals(card, Date.now(), this.getSettings().dayStartHour);
+    const previews = previewIntervals(card, Date.now(), this.service.getSettings().dayStartHour);
     for (const grade of GRADES) {
       const button = this.gradeButtons.get(grade);
       if (button) button.setText(`${GRADE_LABELS[grade]} · ${formatDays(previews[grade])}`);
@@ -174,8 +164,7 @@ export class ReviewModal extends Modal {
     this.blocked = false;
     this.pendingAnswer = null;
 
-    const next = this.queue.shift() ?? null;
-    this.current = next;
+    const next = this.session.next();
     if (!next) {
       this.renderSummary();
       return;
@@ -197,21 +186,17 @@ export class ReviewModal extends Modal {
     this.cardStateEl.setText("");
     this.fileEl.setText(next.file);
     this.openNoteBtn.removeClass("srg-hidden");
-    const remaining = this.queue.length + 1;
+    const remaining = this.session.remaining + 1;
     this.metaRightEl.setText(remaining === 1 ? "1 to review" : `${remaining} to review`);
 
     const resolved = await resolveCard(this.app, next);
-    if (this.current !== next) return;
+    if (this.session.current !== next) return;
 
     if (resolved.status === "ok") {
       if (resolved.relink) {
-        this.store.upsert({
-          ...next,
-          anchor: resolved.relink.anchor,
-          title: resolved.relink.title,
-          updatedAt: Date.now(),
-        });
+        this.service.relink(next, resolved.relink.anchor, resolved.relink.title);
       }
+      this.service.clearMissing(next);
       this.promptEl.setText(resolved.prompt);
       this.pendingAnswer = resolved.answer;
       this.cardStateEl.setText(this.describeState(next));
@@ -228,27 +213,18 @@ export class ReviewModal extends Modal {
         ? "The note for this plant is missing. It may have been moved, renamed or deleted."
         : "This plant's heading is gone from its note.";
     this.errorEl.removeClass("srg-hidden");
-    this.errorEl.createDiv({ text: message });
+    this.errorEl.createEl("div", { text: message });
     const actions = this.errorEl.createDiv({ cls: "srg-error-actions" });
     const skip = actions.createEl("button", { text: "Skip for now" });
     skip.addEventListener("click", () => void this.showNext());
     const remove = actions.createEl("button", { text: "Remove plant" });
     remove.addEventListener("click", () => {
-      new ConfirmModal(
-        this.app,
-        "Remove plant",
-        `Remove "${next.title || next.file}" and its scheduling history? The note itself is left alone.`,
-        "Remove",
-        () => {
-          this.store.deleteCard(next.id);
-        },
-      ).open();
-      void this.showNext();
+      this.service.remove(next, () => void this.showNext());
     });
   }
 
   private describeState(card: Card): string {
-    const settings = this.getSettings();
+    const settings = this.service.getSettings();
     const now = Date.now();
     if (card.reps === 0) return "A fresh seed - first review.";
     const late = overdueDays(card.due, now, settings.dayStartHour);
@@ -262,71 +238,37 @@ export class ReviewModal extends Modal {
   }
 
   private handleGrade(grade: Grade): void {
-    if (!this.revealed || this.blocked || !this.current) return;
-    const settings = this.getSettings();
-    const now = Date.now();
-    const dayKey = logicalDayKey(now, settings.dayStartHour);
-    const card = this.store.getCard(this.current.id) ?? this.current;
-
-    const updated = applyReview(card, grade, { now, dayStartHour: settings.dayStartHour });
-    this.store.upsert(updated);
-    this.store.recordReview(dayKey, grade === 1);
-    this.reviewed += 1;
-    if (grade === 1) {
-      this.again += 1;
-      this.queue.push(updated);
-    }
-    this.lastGrade = { card, wasAgain: grade === 1, dayKey };
+    if (!this.revealed || this.blocked || !this.session.current) return;
+    this.session.grade(grade, Date.now());
     this.updateUndoButton();
-
     void this.showNext();
   }
 
   private undoLastGrade(): void {
-    const last = this.lastGrade;
-    if (!last) return;
-
-    this.store.upsert(last.card);
-    this.store.undoReview(last.dayKey, last.wasAgain);
-    this.reviewed = Math.max(0, this.reviewed - 1);
-    if (last.wasAgain) this.again = Math.max(0, this.again - 1);
-    this.lastGrade = null;
+    if (!this.session.undo()) return;
     this.updateUndoButton();
-
-    this.queue = this.queue.filter((entry) => entry.id !== last.card.id);
-    this.queue.unshift(last.card);
-
     void this.showNext();
   }
 
   private postponeCurrent(): void {
-    if (!this.current || this.blocked) return;
-    const card = this.store.getCard(this.current.id) ?? this.current;
-    const updated = postponeCard(card, Date.now(), this.getSettings().dayStartHour);
-    this.store.upsert(updated);
-    this.postponed += 1;
+    if (this.blocked) return;
+    this.session.postpone();
     void this.showNext();
   }
 
   private rescheduleCurrent(): void {
-    const current = this.current;
+    const current = this.session.current;
     if (!current) return;
-    const card = this.store.getCard(current.id) ?? current;
-    new RescheduleModal(this.app, card, this.getSettings().dayStartHour, (due) => {
-      const latest = this.store.getCard(card.id) ?? card;
-      this.store.upsert(rescheduleCard(latest, due, Date.now()));
-      void this.showNext();
-    }).open();
+    this.service.rescheduleWith(current, (due) => this.session.reschedule(due));
   }
 
   private updateUndoButton(): void {
     if (!this.undoBtn) return;
-    if (this.lastGrade) this.undoBtn.removeClass("srg-hidden");
+    if (this.session.canUndo) this.undoBtn.removeClass("srg-hidden");
     else this.undoBtn.addClass("srg-hidden");
   }
 
   private renderSummary(): void {
-    this.current = null;
     this.revealed = false;
     this.promptEl.setText("");
     this.cardStateEl.setText("");
@@ -346,12 +288,14 @@ export class ReviewModal extends Modal {
     this.summaryEl.empty();
     this.summaryEl.removeClass("srg-hidden");
 
-    const settings = this.getSettings();
-    const due = countDue(this.store.getCards(), Date.now(), settings.dayStartHour);
+    const settings = this.service.getSettings();
+    const due = countDue(this.service.getCards(), Date.now(), settings.dayStartHour);
     this.summaryEl.createEl("div", {
-      text: `Reviewed ${this.reviewed} ${this.reviewed === 1 ? "plant" : "plants"}${
-        this.again > 0 ? `, ${this.again} sent back to the soil` : ""
-      }${this.postponed > 0 ? `, ${this.postponed} put off for later` : ""}.`,
+      text: `Reviewed ${this.session.reviewed} ${
+        this.session.reviewed === 1 ? "plant" : "plants"
+      }${
+        this.session.again > 0 ? `, ${this.session.again} sent back to the soil` : ""
+      }${this.session.postponed > 0 ? `, ${this.session.postponed} put off for later` : ""}.`,
       cls: "srg-summary-title",
     });
     this.summaryEl.createDiv({

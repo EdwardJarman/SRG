@@ -224,6 +224,7 @@ function drawPlant(
   ctx.save();
   ctx.translate(plant.x, plant.y);
   if (model.card.suspended) ctx.globalAlpha = 0.45;
+  if (model.card.missing) ctx.globalAlpha = 0.25;
 
   ctx.fillStyle = palette.shadow;
   ctx.beginPath();

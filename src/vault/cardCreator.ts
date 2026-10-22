@@ -1,6 +1,12 @@
 import { Editor, TFile } from "obsidian";
 import { createCard } from "../core/scheduler";
-import { escapeRegExp, headingTargetAtLine, parseText, plainTextTitle } from "../core/sections";
+import {
+  escapeRegExp,
+  findBlockAtLine,
+  headingTargetAtLine,
+  parseText,
+  plainTextTitle,
+} from "../core/sections";
 import { Anchor } from "../core/types";
 import { GardenStore } from "../store/cardStore";
 import { randomId } from "../utils/random";
@@ -12,9 +18,34 @@ export type PlantOutcome =
 
 export function plantFlashcard(store: GardenStore, editor: Editor, file: TFile): PlantOutcome {
   const now = Date.now();
+  const parsed = parseText(editor.getValue());
 
   if (editor.getSelection().trim().length > 0) {
+    const from = editor.getCursor("from");
     const to = editor.getCursor("to");
+
+    const fromBlock = findBlockAtLine(parsed, from.line);
+    const toBlock = findBlockAtLine(parsed, to.line);
+    const sameParagraph =
+      fromBlock !== null && toBlock !== null && fromBlock.startLine === toBlock.startLine;
+
+    if (!sameParagraph) {
+      // The selection runs over more than one paragraph, so plant the section
+      // it sits in rather than pretending it is a single block.
+      const target = headingTargetAtLine(parsed, from.line);
+      if (target) {
+        return finalize(
+          store,
+          file,
+          { type: "heading", path: target.path, hash: target.hash },
+          target.title || file.basename,
+          "section",
+          now,
+        );
+      }
+      return finalize(store, file, { type: "note" }, file.basename, "note", now);
+    }
+
     const line = editor.getLine(to.line);
     const existing = /(?:^|\s)\^([A-Za-z0-9_-]+)\s*$/.exec(line);
 
@@ -32,7 +63,6 @@ export function plantFlashcard(store: GardenStore, editor: Editor, file: TFile):
     return finalize(store, file, { type: "block", blockId }, title, "block", now);
   }
 
-  const parsed = parseText(editor.getValue());
   const target = headingTargetAtLine(parsed, editor.getCursor().line);
   if (target) {
     return finalize(

@@ -120,3 +120,37 @@ describe("overdueDays", () => {
     expect(overdueDays(dayStart + DAY_MS, NOW, HOUR)).toBe(0);
   });
 });
+
+describe("buildQueue with lapsed and missing cards", () => {
+  it("brings a lapsed card back even though its reps are zero", () => {
+    const dayStart = logicalDayStart(NOW, HOUR);
+    const lapsed = makeCard("lapsed", {
+      reps: 0,
+      interval: 1,
+      due: dayStart - DAY_MS,
+      firstReview: NOW - 10 * DAY_MS,
+    });
+    const queue = buildQueue([lapsed], NOW, HOUR, 5);
+    expect(queue.map((card) => card.id)).toEqual(["lapsed"]);
+  });
+
+  it("does not let a lapsed card take a slot meant for a new one", () => {
+    const dayStart = logicalDayStart(NOW, HOUR);
+    const lapsed = makeCard("lapsed", {
+      reps: 0,
+      due: dayStart - DAY_MS,
+      firstReview: NOW - 10 * DAY_MS,
+      created: NOW - 20 * DAY_MS,
+    });
+    const fresh = makeCard("fresh", { created: NOW - 10 });
+    const queue = buildQueue([lapsed, fresh], NOW, HOUR, 1);
+    expect(queue.map((card) => card.id)).toEqual(["lapsed", "fresh"]);
+  });
+
+  it("leaves out plants whose note is missing", () => {
+    const dayStart = logicalDayStart(NOW, HOUR);
+    const missing = makeCard("missing", { reps: 3, due: dayStart, missing: true });
+    expect(buildQueue([missing], NOW, HOUR, 5)).toHaveLength(0);
+    expect(countDue([missing], NOW, HOUR)).toBe(0);
+  });
+});

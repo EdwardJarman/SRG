@@ -35,6 +35,7 @@ export interface Card {
   lastReview: number | null;
   firstReview: number | null;
   suspended: boolean;
+  missing: boolean;
   updatedAt: number;
 }
 
@@ -53,10 +54,12 @@ export interface GardenSettings {
   newCardsPerDay: number;
   dayStartHour: number;
   retentionWindowDays: number;
+  burySiblings: boolean;
 }
 
 export const DEFAULT_SETTINGS: GardenSettings = {
   newCardsPerDay: 15,
   dayStartHour: 4,
   retentionWindowDays: 30,
+  burySiblings: true,
 };

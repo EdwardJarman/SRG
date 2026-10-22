@@ -213,6 +213,30 @@ export function findSection(parsed: ParsedText, anchor: { path: string[]; hash: 
   return null;
 }
 
+function headingLineSet(parsed: ParsedText): Set<number> {
+  const headingLines = new Set<number>();
+  for (const heading of parsed.headings) {
+    for (let line = heading.startLine; line <= heading.endLine; line++) headingLines.add(line);
+  }
+  return headingLines;
+}
+
+function paragraphRange(parsed: ParsedText, line: number, headingLines: Set<number>): { start: number; end: number } {
+  let start = line;
+  while (start > 0 && parsed.lines[start - 1].trim() !== "" && !headingLines.has(start - 1)) start--;
+  let end = line;
+  while (end < parsed.lines.length - 1 && parsed.lines[end + 1].trim() !== "" && !headingLines.has(end + 1)) end++;
+  return { start, end };
+}
+
+export function findBlockAtLine(parsed: ParsedText, line: number): BlockMatch | null {
+  if (line < 0 || line >= parsed.lines.length) return null;
+  const headingLines = headingLineSet(parsed);
+  if (headingLines.has(line)) return null;
+  const { start, end } = paragraphRange(parsed, line, headingLines);
+  return { startLine: start, endLine: end, text: parsed.lines.slice(start, end + 1).join("\n") };
+}
+
 export function findBlockByRef(parsed: ParsedText, blockId: string): BlockMatch | null {
   const idPattern = new RegExp(`(?:^|\\s)\\^${escapeRegExp(blockId)}\\s*$`);
   let found = -1;
@@ -224,15 +248,8 @@ export function findBlockByRef(parsed: ParsedText, blockId: string): BlockMatch 
   }
   if (found === -1) return null;
 
-  const headingLines = new Set<number>();
-  for (const heading of parsed.headings) {
-    for (let line = heading.startLine; line <= heading.endLine; line++) headingLines.add(line);
-  }
-
-  let start = found;
-  while (start > 0 && parsed.lines[start - 1].trim() !== "" && !headingLines.has(start - 1)) start--;
-  let end = found;
-  while (end < parsed.lines.length - 1 && parsed.lines[end + 1].trim() !== "" && !headingLines.has(end + 1)) end++;
+  const headingLines = headingLineSet(parsed);
+  const { start, end } = paragraphRange(parsed, found, headingLines);
 
   const text = parsed.lines
     .slice(start, end + 1)
