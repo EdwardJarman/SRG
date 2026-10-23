@@ -20,6 +20,7 @@ function makeCard(id: string, file: string, overrides: Partial<Card> = {}): Card
     firstReview: NOW - 5_000,
     suspended: false,
     missing: false,
+    orphaned: false,
     trashedAt: null,
     updatedAt: NOW - 1_000,
     ...overrides,

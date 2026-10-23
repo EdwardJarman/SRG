@@ -5,6 +5,47 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-23
+
+### Added
+
+- Orphaned anchors are detected, held out of reviews like missing notes, and
+  can be repaired from Manage plants, the card menu, or the review screen.
+- Startup reconciliation notices when notes disappeared or came back while
+  Obsidian was closed.
+- A read-only banner and save-problem status when the data file cannot be
+  written or was produced by a newer plugin version.
+- Deletion tombstones and reset markers prevent stale windows or conflicted
+  copies from resurrecting deleted cards.
+- Per-writer review history keeps totals accurate across multiple Obsidian
+  windows.
+- Release assets now include `main.js`, `manifest.json` and `styles.css`
+  individually, as well as a flat zip.
+
+### Changed
+
+- The data format is now version 3. Existing files migrate automatically.
+- Resetting a plant makes it a true seed again and subject to the daily
+  new-card quota.
+- Data files are written with sorted keys and retry transient save failures.
+- Conflicted copies are archived with a `.merged-*` suffix after a successful
+  merge instead of being merged forever.
+- Backups are retained for one year, capped at 20 files.
+- Reset removes stale tombstones and review history, writes a backup first, and
+  restores a failed reset instead of leaving a half-merged file.
+- Release tags now exactly match the plugin version, without a `v` prefix.
+
+### Fixed
+
+- Deleting a folder now marks every card under it as missing instead of leaving
+  those cards stuck.
+- Wikilink anchors escape `\`, `|`, `]` and heading `#` characters.
+- Replanting a card that is in the trash no longer creates a duplicate.
+- Emptying the trash records tombstones so emptied cards cannot return.
+- Merging cards with equal timestamps is deterministic.
+- Resetting an already-empty garden now writes a reset marker and removes
+  stale temp files.
+
 ## [0.2.0] - 2026-10-23
 
 ### Added
@@ -40,7 +81,7 @@ All notable changes to this project are documented here. The format is based on
 - The README now covers managing plants and the new review controls.
 - Release packaging: `npm run package` builds a zip of the plugin, `npm run
   release` publishes it to GitHub with the matching changelog entry, and a
-  GitHub Actions workflow does the same for every `v*` tag.
+  GitHub Actions workflow does the same for every exact version tag.
 
 ### Changed
 

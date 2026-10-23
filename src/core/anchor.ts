@@ -17,12 +17,26 @@ export function anchorShortLabel(anchor: Anchor): string {
   return `^${anchor.blockId}`;
 }
 
+function escapeTargetPart(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/#/g, "\\#").replace(/\|/g, "\\|").replace(/\]/g, "\\]");
+}
+
+function escapeAlias(value: string): string {
+  return value
+    .replace(/\r?\n/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\]/g, "\\]");
+}
+
 export function anchorReference(card: Card): string {
-  if (card.anchor.type === "note") return `[[${card.file}]]`;
+  const file = escapeTargetPart(card.file);
+  if (card.anchor.type === "note") return `[[${file}]]`;
   if (card.anchor.type === "heading") {
-    return `[[${card.file}#${card.anchor.path.join("#")}|${card.title || anchorShortLabel(card.anchor)}]]`;
+    const path = card.anchor.path.map(escapeTargetPart).join("#");
+    return `[[${file}#${path}|${escapeAlias(card.title || anchorShortLabel(card.anchor))}]]`;
   }
-  return `[[${card.file}#^${card.anchor.blockId}|${card.title || card.anchor.blockId}]]`;
+  return `[[${file}#^${card.anchor.blockId}|${escapeAlias(card.title || card.anchor.blockId)}]]`;
 }
 
 export function anchorProblemText(card: Card): string {

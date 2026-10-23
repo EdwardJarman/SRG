@@ -41,6 +41,18 @@ describe("anchor references", () => {
     );
   });
 
+  it("escapes wikilink syntax in file names, headings and aliases", () => {
+    expect(
+      anchorReference(
+        card(
+          { type: "heading", path: ["Odd # heading", "Pipe | name"], hash: "" },
+          "Alias | ] #",
+          "Notes/A [draft] #1.md",
+        ),
+      ),
+    ).toBe("[[Notes/A [draft\\] \\#1.md#Odd \\# heading#Pipe \\| name|Alias \\| \\] #]]");
+  });
+
   it("describes what is broken when a note or anchor is missing", () => {
     expect(anchorProblemText(card({ type: "note" }, "Plants"))).toBe("the note Notes/Plants.md");
     expect(

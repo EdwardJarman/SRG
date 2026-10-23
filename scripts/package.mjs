@@ -23,11 +23,11 @@ function zipFolder(stageDir, zipPath) {
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      `Compress-Archive -Path '${stageDir}' -DestinationPath '${zipPath}' -Force`,
+      `Compress-Archive -Path '${stageDir}\\*' -DestinationPath '${zipPath}' -Force`,
     ]);
     return;
   }
-  run("zip", ["-r", zipPath, PLUGIN_ID], join(ROOT, "dist"));
+  run("zip", ["-r", zipPath, "."], stageDir);
 }
 
 export function packagePlugin({ syncVersion = true } = {}) {

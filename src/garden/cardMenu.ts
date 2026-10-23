@@ -34,6 +34,14 @@ export function addCardActions(menu: Menu, plugin: SpacedRepetitionGardenPlugin,
       .setIcon("copy")
       .onClick(() => void copyAnchor(card)),
   );
+  if (card.orphaned) {
+    menu.addItem((item) =>
+      item
+        .setTitle("Repair anchor")
+        .setIcon("anchor")
+        .onClick(() => service.repairAnchor(card)),
+    );
+  }
   if (card.missing) {
     menu.addItem((item) =>
       item

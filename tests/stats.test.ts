@@ -155,11 +155,12 @@ describe("buildQueue with lapsed and missing cards", () => {
     expect(queue.map((card) => card.id)).toEqual(["lapsed", "fresh"]);
   });
 
-  it("leaves out plants whose note is missing", () => {
+  it("leaves out plants whose note is missing or whose anchor is orphaned", () => {
     const dayStart = logicalDayStart(NOW, HOUR);
     const missing = makeCard("missing", { reps: 3, due: dayStart, missing: true });
-    expect(buildQueue([missing], NOW, HOUR, 5)).toHaveLength(0);
-    expect(countDue([missing], NOW, HOUR)).toBe(0);
+    const orphaned = makeCard("orphaned", { reps: 3, due: dayStart, orphaned: true });
+    expect(buildQueue([missing, orphaned], NOW, HOUR, 5)).toHaveLength(0);
+    expect(countDue([missing, orphaned], NOW, HOUR)).toBe(0);
   });
 
   it("leaves out trashed plants everywhere", () => {
@@ -170,6 +171,19 @@ describe("buildQueue with lapsed and missing cards", () => {
     const stats = computeStats([trashed], {}, NOW, DEFAULT_SETTINGS);
     expect(stats.due).toBe(0);
     expect(stats.newCards).toBe(0);
+  });
+
+  it("treats a reset plant as a fresh seed again", () => {
+    const reset = makeCard("reset", {
+      reps: 0,
+      interval: 0,
+      ease: 2.5,
+      due: NOW,
+      firstReview: null,
+    });
+    const stats = computeStats([reset], {}, NOW, { ...DEFAULT_SETTINGS, dayStartHour: HOUR });
+    expect(stats.newCards).toBe(1);
+    expect(buildQueue([reset], NOW, HOUR, 1).map((card) => card.id)).toEqual(["reset"]);
   });
 
   it("buildQueueForSettings matches the queue built from its settings", () => {

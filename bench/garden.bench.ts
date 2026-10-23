@@ -43,9 +43,12 @@ beforeAll(async () => {
   });
 
   data = {
-    version: 2,
+    version: 3,
     cards: Object.fromEntries(cards.map((card) => [card.id, card])),
     daily: {},
+    writers: {},
+    deleted: {},
+    resetAt: 0,
   };
   for (let offset = 0; offset < 365; offset++) {
     const day = new Date(NOW - offset * DAY_MS);

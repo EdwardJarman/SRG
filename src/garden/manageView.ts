@@ -18,6 +18,7 @@ type StateFilter =
   | "seed"
   | "suspended"
   | "missing"
+  | "orphaned"
   | "trash";
 
 const STATE_FILTERS: Array<{ value: StateFilter; label: string }> = [
@@ -28,6 +29,7 @@ const STATE_FILTERS: Array<{ value: StateFilter; label: string }> = [
   { value: "seed", label: "Seeds" },
   { value: "suspended", label: "Suspended" },
   { value: "missing", label: "Missing notes" },
+  { value: "orphaned", label: "Orphaned anchors" },
   { value: "trash", label: "Trash" },
 ];
 
@@ -40,6 +42,7 @@ const STAGE_ICONS: Record<PlantStage, string> = {
 
 function iconFor(model: PlantModel): string {
   if (model.card.trashedAt !== null) return "🗑️";
+  if (model.card.orphaned) return "⚓";
   if (model.condition === "missing") return "👻";
   if (model.condition === "wilting") return "🥀";
   if (model.condition === "blooming") return "🌸";
@@ -66,6 +69,7 @@ export class ManageView extends ItemView {
   private stateEl!: HTMLSelectElement;
   private removeMissingBtn!: HTMLButtonElement;
   private emptyTrashBtn!: HTMLButtonElement;
+  private statusEl!: HTMLElement;
   private unsubscribe: (() => void) | null = null;
 
   private query = "";
@@ -136,6 +140,7 @@ export class ManageView extends ItemView {
     });
     reset.addEventListener("click", () => this.plugin.cards.resetGarden());
 
+    this.statusEl = root.createDiv({ cls: "srg-status-banner srg-hidden" });
     this.countEl = root.createDiv({ cls: "srg-manage-count" });
     this.listEl = root.createDiv({ cls: "srg-manage-list" });
 
@@ -182,6 +187,8 @@ export class ManageView extends ItemView {
           return row.card.suspended;
         case "missing":
           return row.card.missing;
+        case "orphaned":
+          return row.card.orphaned;
         case "trash":
           return row.card.trashedAt !== null;
         default:
@@ -190,12 +197,20 @@ export class ManageView extends ItemView {
     });
   }
 
+  private renderStatusBanner(): void {
+    const problem = this.plugin.store.getStatusProblem();
+    this.statusEl.toggleClass("srg-hidden", problem === null);
+    this.statusEl.setText(problem ?? "");
+  }
+
   private renderList(): void {
     if (!this.listEl) return;
+    this.renderStatusBanner();
     const rows = this.rows();
     const all = this.plugin.store.getAllCards();
     const active = this.plugin.store.getCards();
-    const missing = active.filter((card) => card.missing);
+    const missing = active.filter((card) => card.missing && !card.orphaned);
+    const orphaned = active.filter((card) => card.orphaned);
     const trashed = all.filter((card) => card.trashedAt !== null);
     const beds = Array.from(new Set(all.map((card) => bedNameFor(card)))).sort((a, b) => {
       if (a === "Vault root") return -1;
@@ -217,6 +232,7 @@ export class ManageView extends ItemView {
       `${active.length} ${active.length === 1 ? "plant" : "plants"}`,
     ];
     if (missing.length > 0) parts.push(`${missing.length} missing note${missing.length === 1 ? "" : "s"}`);
+    if (orphaned.length > 0) parts.push(`${orphaned.length} orphaned anchor${orphaned.length === 1 ? "" : "s"}`);
     if (trashed.length > 0) parts.push(`${trashed.length} in trash`);
     this.countEl.setText(parts.join(" · "));
     this.removeMissingBtn.toggleClass("srg-hidden", missing.length === 0);
@@ -250,6 +266,7 @@ export class ManageView extends ItemView {
     const trashed = card.trashedAt !== null;
     const el = this.listEl.createDiv({ cls: "srg-manage-row" });
     if (card.suspended) el.addClass("srg-manage-suspended");
+    if (card.orphaned) el.addClass("srg-manage-orphaned");
     if (trashed) el.addClass("srg-manage-trashed");
 
     el.createDiv({ cls: "srg-manage-icon", text: iconFor(model) });
@@ -259,9 +276,11 @@ export class ManageView extends ItemView {
     title.setAttribute("title", card.title || card.file);
     const status = trashed
       ? `Removed ${removedText(card.trashedAt ?? 0)}`
-      : card.suspended
-        ? "Suspended"
-        : plantStatusText(model);
+      : card.orphaned
+        ? "Anchor needs repair"
+        : card.suspended
+          ? "Suspended"
+          : plantStatusText(model);
     main.createDiv({
       cls: "srg-manage-sub",
       text: `${row.bed} · ${card.file} · ${status}`,
@@ -281,6 +300,10 @@ export class ManageView extends ItemView {
       return;
     }
 
+    if (card.orphaned) {
+      const repair = actions.createEl("button", { cls: "mod-cta", text: "Repair" });
+      repair.addEventListener("click", () => this.plugin.cards.repairAnchor(card));
+    }
     const review = actions.createEl("button", { text: "Review" });
     review.disabled = card.missing;
     review.title = card.missing ? "This plant is held back until its note comes back." : "Review this plant now";

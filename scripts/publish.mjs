@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { packagePlugin, ROOT, readVersion } from "./package.mjs";
-import { syncManifestVersion, versionToTag } from "./version.mjs";
+import { tagToVersion, versionToTag } from "./version.mjs";
 
 function run(command, args) {
   execFileSync(command, args, { cwd: ROOT, stdio: "inherit" });
@@ -23,15 +23,6 @@ function changelogNotes(text, version) {
   return (next ? rest.slice(0, next.index) : rest).trim();
 }
 
-function releaseExists(tag) {
-  try {
-    execFileSync("gh", ["release", "view", tag], { cwd: ROOT, stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function tagExists(tag) {
   try {
     capture("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`]);
@@ -44,6 +35,10 @@ function tagExists(tag) {
 const dryRun = process.argv.includes("--dry-run");
 const version = readVersion();
 const tag = versionToTag(version);
+if (tagToVersion(tag) !== version) {
+  console.error(`Invalid release tag ${tag} for version ${version}.`);
+  process.exit(1);
+}
 
 const dirty = capture("git", ["status", "--porcelain"]);
 if (dirty) {
@@ -55,37 +50,36 @@ if (dirty) {
   console.warn("Dry run: working tree has changes, so commit and tag steps are skipped.");
 }
 
-if (!dryRun && syncManifestVersion(version)) {
-  run("git", ["add", "manifest.json", "versions.json"]);
-  run("git", ["commit", "-m", `Release ${tag}`]);
-  run("git", ["push"]);
-}
-
-if (!dryRun && !tagExists(tag)) {
-  run("git", ["tag", "-a", tag, "-m", tag]);
-  run("git", ["push", "origin", tag]);
+if (!dryRun && tagExists(tag)) {
+  console.error(`Tag ${tag} already exists. Bump the version before releasing.`);
+  process.exit(1);
 }
 
 const zip = packagePlugin({ syncVersion: !dryRun });
-const notes = changelogNotes(readFileSync(join(ROOT, "CHANGELOG.md"), "utf8"), version);
-
-if (dryRun) {
-  const manifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
-  if (manifest.version !== version) {
+const manifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
+if (manifest.version !== version) {
+  if (dryRun) {
     console.warn(`Dry run: manifest.json is at ${manifest.version}, package.json is at ${version}.`);
+  } else {
+    console.error(`manifest.json is at ${manifest.version}, but package.json is at ${version}.`);
+    process.exit(1);
   }
-  console.log(`Dry run OK for ${tag}.`);
+}
+
+const notes = changelogNotes(readFileSync(join(ROOT, "CHANGELOG.md"), "utf8"), version);
+if (dryRun) {
+  console.log(`Dry run OK for tag ${tag}.`);
   console.log(`Package: ${zip}`);
-  console.log(`Release exists: ${releaseExists(tag) ? "yes (would upload)" : "no (would create)"}`);
   console.log(`Notes preview:\n${notes}`);
   process.exit(0);
 }
 
-if (releaseExists(tag)) {
-  run("gh", ["release", "upload", tag, zip, "--clobber"]);
-  run("gh", ["release", "edit", tag, "--notes", notes]);
-  console.log(`Updated ${tag}`);
-} else {
-  run("gh", ["release", "create", tag, zip, "--title", tag, "--notes", notes]);
-  console.log(`Published ${tag}`);
+const status = capture("git", ["status", "--porcelain"]);
+if (status) {
+  run("git", ["add", "manifest.json", "versions.json"]);
+  run("git", ["commit", "-m", `Release ${tag}`]);
 }
+run("git", ["push"]);
+
+run("git", ["tag", "-a", tag, "-m", tag]);
+run("git", ["push", "origin", tag]);

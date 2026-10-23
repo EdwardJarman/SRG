@@ -628,3 +628,36 @@
     width: 100%;
   }
 }
+
+.srg-status-banner {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  border-left: 3px solid var(--text-error);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.srg-manage-orphaned .srg-manage-title,
+.srg-manage-orphaned .srg-manage-anchor {
+  color: var(--text-warning);
+}
+
+.srg-repair-sub {
+  color: var(--text-muted);
+  margin-top: -6px;
+  word-break: break-word;
+}
+
+.srg-repair select {
+  width: 100%;
+  margin: 6px 0 14px;
+}
+
+.srg-repair-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

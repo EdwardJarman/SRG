@@ -28,6 +28,7 @@ export class GardenView extends ItemView {
   private dueChipEl: HTMLElement | null = null;
   private streakChipEl: HTMLElement | null = null;
   private retentionChipEl: HTMLElement | null = null;
+  private statusEl: HTMLElement | null = null;
   private reviewBtn: HTMLButtonElement | null = null;
   private manageBtn: HTMLButtonElement | null = null;
 
@@ -87,6 +88,8 @@ export class GardenView extends ItemView {
     this.manageBtn = hud.createEl("button", { cls: "srg-garden-manage", text: "Manage" });
     this.registerDomEvent(this.manageBtn, "click", () => void this.plugin.openManage());
 
+    this.statusEl = root.createDiv({ cls: "srg-status-banner srg-hidden" });
+
     const wrap = root.createDiv({ cls: "srg-garden-canvas-wrap" });
     this.emptyEl = wrap.createDiv({ cls: "srg-garden-empty srg-hidden" });
     this.emptyEl.createDiv({
@@ -143,6 +146,7 @@ export class GardenView extends ItemView {
     this.ctx = null;
     this.tooltipEl = null;
     this.emptyEl = null;
+    this.statusEl = null;
     this.reviewBtn = null;
   }
 
@@ -177,6 +181,11 @@ export class GardenView extends ItemView {
 
   private updateHud(): void {
     const now = Date.now();
+    const problem = this.plugin.store.getStatusProblem();
+    if (this.statusEl) {
+      this.statusEl.toggleClass("srg-hidden", problem === null);
+      this.statusEl.setText(problem ?? "");
+    }
     const cards = this.plugin.store.getCards();
     const stats = computeStats(cards, this.plugin.store.getData().daily, now, this.plugin.settings);
     const queueLength = buildQueueForSettings(cards, now, this.plugin.settings).length;
@@ -191,10 +200,12 @@ export class GardenView extends ItemView {
       );
     }
     if (this.reviewBtn) {
+      const readOnly = this.plugin.store.isReadOnly();
       this.reviewBtn.setText(queueLength === 0 ? "Nothing due" : `Review ${queueLength}`);
-      this.reviewBtn.disabled = queueLength === 0;
-      this.reviewBtn.title =
-        queueLength === 0 && stats.due > 0
+      this.reviewBtn.disabled = queueLength === 0 || readOnly;
+      this.reviewBtn.title = readOnly
+        ? (this.plugin.store.getReadOnlyReason() ?? "This garden is read-only.")
+        : queueLength === 0 && stats.due > 0
           ? "No new cards are left in today's quota. Raise it in settings to review more."
           : "Review the cards that are due now";
     }

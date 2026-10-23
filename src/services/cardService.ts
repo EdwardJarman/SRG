@@ -1,12 +1,14 @@
-import { App, Notice } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
 import { postponeCard, rescheduleCard, resetCard, toggleSuspended } from "../core/cardActions";
 import { logicalDayKey } from "../core/dates";
 import { applyReview } from "../core/scheduler";
 import { Card, Grade, GardenSettings } from "../core/types";
 import { GardenStore } from "../store/cardStore";
+import { AnchorRepairModal } from "../ui/anchorRepairModal";
 import { ConfirmModal } from "../ui/confirmModal";
 import { RescheduleModal } from "../ui/rescheduleModal";
 import { openCardNote } from "../vault/opener";
+import { resolveCard } from "../vault/resolver";
 
 function cardName(card: Card): string {
   return card.title || card.file;
@@ -31,16 +33,25 @@ export class CardService {
     return this.store.getCard(card.id) ?? card;
   }
 
+  private ensureWritable(): boolean {
+    if (!this.store.isReadOnly()) return true;
+    new Notice(this.store.getReadOnlyReason() ?? "This garden is read-only.");
+    return false;
+  }
+
   toggleSuspended(card: Card): void {
+    if (!this.ensureWritable()) return;
     this.store.upsert(toggleSuspended(this.latest(card), Date.now()));
   }
 
   postpone(card: Card): void {
+    if (!this.ensureWritable()) return;
     const settings = this.readSettings();
     this.store.upsert(postponeCard(this.latest(card), Date.now(), settings.dayStartHour));
   }
 
   reschedule(card: Card): void {
+    if (!this.ensureWritable()) return;
     this.rescheduleWith(card, (due) => this.rescheduleTo(card, due));
   }
 
@@ -53,10 +64,12 @@ export class CardService {
   }
 
   rescheduleTo(card: Card, due: number): void {
+    if (!this.ensureWritable()) return;
     this.store.upsert(rescheduleCard(this.latest(card), due, Date.now()));
   }
 
   resetProgress(card: Card): void {
+    if (!this.ensureWritable()) return;
     const latest = this.latest(card);
     new ConfirmModal(
       this.app,
@@ -70,6 +83,7 @@ export class CardService {
   }
 
   remove(card: Card, onDone?: () => void): void {
+    if (!this.ensureWritable()) return;
     const latest = this.latest(card);
     new ConfirmModal(
       this.app,
@@ -90,11 +104,13 @@ export class CardService {
   }
 
   restore(card: Card): void {
+    if (!this.ensureWritable()) return;
     this.store.restoreCard(card.id, Date.now());
     new Notice(`Restored "${cardName(card)}".`);
   }
 
   deleteForever(card: Card): void {
+    if (!this.ensureWritable()) return;
     const latest = this.latest(card);
     new ConfirmModal(
       this.app,
@@ -109,6 +125,7 @@ export class CardService {
   }
 
   emptyTrash(): void {
+    if (!this.ensureWritable()) return;
     const trashed = this.store.getTrashedCards();
     if (trashed.length === 0) {
       new Notice("The trash is already empty.");
@@ -128,6 +145,7 @@ export class CardService {
   }
 
   trashMissing(): void {
+    if (!this.ensureWritable()) return;
     const missing = this.store.getMissingCards();
     if (missing.length === 0) {
       new Notice("Every plant still has its note.");
@@ -149,10 +167,7 @@ export class CardService {
   }
 
   resetGarden(): void {
-    if (this.store.isReadOnly()) {
-      new Notice("This garden is read-only because its data file could not be saved safely.");
-      return;
-    }
+    if (!this.ensureWritable()) return;
     new ConfirmModal(
       this.app,
       "Reset the whole garden",
@@ -164,7 +179,7 @@ export class CardService {
           .then((backupPath) => {
             new Notice(
               backupPath === null
-                ? "The garden was already empty."
+                ? "Garden reset."
                 : `Garden reset. The previous data was saved to ${backupPath}.`,
               10000,
             );
@@ -179,11 +194,63 @@ export class CardService {
   }
 
   relink(card: Card, anchor: Card["anchor"], title: string): void {
-    this.store.upsert({ ...this.latest(card), anchor, title, updatedAt: Date.now() });
+    if (!this.ensureWritable()) return;
+    this.store.upsert({ ...this.latest(card), anchor, title, orphaned: false, updatedAt: Date.now() });
+  }
+
+  repairAnchor(card: Card, onDone?: () => void): void {
+    if (!this.ensureWritable()) return;
+    const latest = this.latest(card);
+    new AnchorRepairModal(this.app, latest, (choice) => {
+      this.relink(latest, choice.anchor, choice.title);
+      new Notice(`Repaired the anchor for "${cardName(latest)}".`);
+      if (onDone) onDone();
+    }).open();
+  }
+
+  async reconcileFileAnchors(filePath: string): Promise<void> {
+    if (this.store.isReadOnly()) return;
+    const cards = this.store.getAllCards().filter((card) => card.file === filePath && !card.missing);
+    if (cards.length === 0) return;
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) return;
+
+    for (const card of cards) {
+      if (this.store.getCard(card.id) === null) continue;
+      const resolved = await resolveCard(this.app, card);
+      if (resolved.status === "missing-file") continue;
+      if (resolved.status === "orphaned") {
+        this.store.setOrphaned(card.id, true);
+        continue;
+      }
+      this.store.setOrphaned(card.id, false);
+      if (resolved.relink) {
+        const latest = this.latest(card);
+        this.store.upsert({
+          ...latest,
+          anchor: resolved.relink.anchor,
+          title: resolved.relink.title,
+          orphaned: false,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+  }
+
+  clearOrphaned(card: Card): void {
+    this.store.setOrphaned(card.id, false);
+  }
+
+  markOrphaned(card: Card, orphaned: boolean): void {
+    this.store.setOrphaned(card.id, orphaned);
   }
 
   clearMissing(card: Card): void {
     this.store.clearMissing(card.id);
+  }
+
+  markMissing(card: Card, missing: boolean): void {
+    this.store.setFileMissing(card.file, missing);
   }
 
   flush(): void {
@@ -195,6 +262,9 @@ export class CardService {
   }
 
   grade(card: Card, grade: Grade, now: number): { updated: Card; dayKey: string } {
+    if (!this.ensureWritable()) {
+      return { updated: card, dayKey: logicalDayKey(now, this.readSettings().dayStartHour) };
+    }
     const settings = this.readSettings();
     const base = this.latest(card);
     const updated = applyReview(base, grade, { now, dayStartHour: settings.dayStartHour });
@@ -205,6 +275,7 @@ export class CardService {
   }
 
   ungrade(card: Card, dayKey: string, wasAgain: boolean): void {
+    if (!this.ensureWritable()) return;
     this.store.upsert({ ...card, updatedAt: Date.now() });
     this.store.undoReview(dayKey, wasAgain);
   }

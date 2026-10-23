@@ -193,6 +193,7 @@ export class ReviewModal extends Modal {
         this.service.relink(next, resolved.relink.anchor, resolved.relink.title);
       }
       this.service.clearMissing(next);
+      if (next.orphaned) this.service.clearOrphaned(next);
       this.promptEl.setText(resolved.prompt);
       this.pendingAnswer = resolved.answer;
       this.cardStateEl.setText(`${this.describeState(next)} \u00b7 ${anchorLabel(next.anchor)}`);
@@ -204,14 +205,25 @@ export class ReviewModal extends Modal {
     this.showBtn.addClass("srg-hidden");
     this.postponeBtn.addClass("srg-hidden");
     this.rescheduleBtn.addClass("srg-hidden");
+    if (resolved.status === "missing-file") {
+      this.service.markMissing(next, true);
+    } else {
+      this.service.markOrphaned(next, true);
+    }
     const message =
       resolved.status === "missing-file"
         ? `The note for this plant is missing. It may have been moved, renamed or deleted. This plant is anchored to ${anchorProblemText(next)}.`
-        : `This plant is anchored to ${anchorProblemText(next)}, which is gone from its note. If you edited the marker by hand, put it back or remove the plant.`;
+        : `This plant is anchored to ${anchorProblemText(next)}, which is gone from its note. Repair the anchor, or put the marker back by hand.`;
     this.errorEl.removeClass("srg-hidden");
     this.errorEl.createEl("div", { text: message });
     this.errorEl.createEl("div", { cls: "srg-error-anchor", text: anchorLabel(next.anchor) });
     const actions = this.errorEl.createDiv({ cls: "srg-error-actions" });
+    if (resolved.status === "orphaned") {
+      const repair = actions.createEl("button", { cls: "mod-cta", text: "Repair anchor" });
+      repair.addEventListener("click", () => {
+        this.service.repairAnchor(next, () => void this.showNext());
+      });
+    }
     const skip = actions.createEl("button", { text: "Skip for now" });
     skip.addEventListener("click", () => void this.showNext());
     const copy = actions.createEl("button", { text: "Copy anchor" });

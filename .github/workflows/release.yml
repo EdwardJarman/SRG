@@ -3,8 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
-  workflow_dispatch:
+      - "[0-9]*"
 
 jobs:
   release:
@@ -21,7 +20,7 @@ jobs:
       - run: npm test
       - name: Check the tag matches package.json
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME}"
           PKG_VERSION="$(node -p "require('./package.json').version")"
           if [ "$VERSION" != "$PKG_VERSION" ]; then
             echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}"
@@ -32,8 +31,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME}"
           ZIP="dist/spaced-repetition-garden-${VERSION}.zip"
+          ASSETS=(
+            "dist/spaced-repetition-garden/main.js"
+            "dist/spaced-repetition-garden/manifest.json"
+            "dist/spaced-repetition-garden/styles.css"
+          )
           NOTES="$(awk -v v="$VERSION" '
             $0 ~ "^## \\[" v "\\]" { section = 1; next }
             section && /^## / { exit }
@@ -43,8 +47,8 @@ jobs:
             NOTES="Release ${VERSION}."
           fi
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" "$ZIP" --clobber
+            gh release upload "${GITHUB_REF_NAME}" "$ZIP" "${ASSETS[@]}" --clobber
             gh release edit "${GITHUB_REF_NAME}" --notes "$NOTES"
           else
-            gh release create "${GITHUB_REF_NAME}" "$ZIP" --title "${GITHUB_REF_NAME}" --notes "$NOTES"
+            gh release create "${GITHUB_REF_NAME}" "$ZIP" "${ASSETS[@]}" --title "${GITHUB_REF_NAME}" --notes "$NOTES"
           fi

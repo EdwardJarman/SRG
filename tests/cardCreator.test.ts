@@ -107,6 +107,19 @@ describe("plantFlashcard with a selection", () => {
     expect(instance.getCards()[0].anchor.type).toBe("note");
   });
 
+  it("does not replant a card that is already in the trash", async () => {
+    const instance = await store();
+    const fake = new FakeEditor("One paragraph\n", 0, 0);
+    expect(plantFlashcard(instance, fake as unknown as Editor, file()).status).toBe("planted");
+    const card = instance.getCards()[0];
+    instance.trashCard(card.id, Date.now());
+
+    const second = plantFlashcard(instance, fake as unknown as Editor, file());
+
+    expect(second.status).toBe("trashed");
+    expect(instance.getAllCards()).toHaveLength(1);
+  });
+
   it("adds a block marker to the note so the card survives edits", async () => {
     const instance = await store();
     const text = "One paragraph\n";

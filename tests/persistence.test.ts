@@ -27,6 +27,9 @@ function sampleData(): GardenData {
     version: DATA_VERSION,
     cards: { [card.id]: card },
     daily: { "2026-01-10": { reviews: 3, again: 1 } },
+    writers: { legacy: { "2026-01-10": { reviews: 3, again: 1 } } },
+    deleted: {},
+    resetAt: 0,
   };
 }
 
@@ -85,17 +88,93 @@ describe("garden data persistence", () => {
       version: DATA_VERSION,
       cards: { x: older },
       daily: { "2026-01-10": { reviews: 2, again: 0 } },
+      writers: {},
+      deleted: {},
+      resetAt: 0,
     };
     const b: GardenData = {
       version: DATA_VERSION,
       cards: { x: newer, y: other },
       daily: { "2026-01-10": { reviews: 5, again: 1 } },
+      writers: {},
+      deleted: {},
+      resetAt: 0,
     };
 
     const merged = mergeGardenData(a, b);
     expect(merged.cards.x.title).toBe("Renamed");
     expect(Object.keys(merged.cards).sort()).toEqual(["x", "y"]);
     expect(merged.daily["2026-01-10"]).toEqual({ reviews: 5, again: 1 });
+  });
+
+  it("resolves equal timestamps deterministically", () => {
+    const base = createCard({ id: "x", file: "a.md", anchor: { type: "note" }, title: "A", now: NOW });
+    const a: GardenData = { ...emptyGardenData(), cards: { x: { ...base, title: "A" } } };
+    const b: GardenData = { ...emptyGardenData(), cards: { x: { ...base, title: "B" } } };
+
+    expect(mergeGardenData(a, b).cards.x).toEqual(mergeGardenData(b, a).cards.x);
+  });
+
+  it("migrates legacy daily totals into a writer bucket", () => {
+    const data = sanitizeGardenData({
+      version: 2,
+      cards: {},
+      daily: { "2026-01-10": { reviews: 3, again: 1 } },
+    });
+    expect(data?.writers).toEqual({ legacy: { "2026-01-10": { reviews: 3, again: 1 } } });
+    expect(data?.daily).toEqual({ "2026-01-10": { reviews: 3, again: 1 } });
+  });
+
+  it("sums separate writers and keeps the highest value from the same writer", () => {
+    const a: GardenData = {
+      ...sampleData(),
+      cards: {},
+      writers: { alice: { "2026-01-10": { reviews: 2, again: 0 } } },
+      daily: { "2026-01-10": { reviews: 2, again: 0 } },
+    };
+    const b: GardenData = {
+      ...sampleData(),
+      cards: {},
+      writers: {
+        alice: { "2026-01-10": { reviews: 3, again: 1 } },
+        bob: { "2026-01-10": { reviews: 1, again: 1 } },
+      },
+      daily: { "2026-01-10": { reviews: 4, again: 2 } },
+    };
+
+    expect(mergeGardenData(a, b).daily["2026-01-10"]).toEqual({ reviews: 4, again: 2 });
+  });
+
+  it("lets tombstones beat cards and drops cards older than a reset", () => {
+    const before = createCard({ id: "old", file: "old.md", anchor: { type: "note" }, title: "Old", now: NOW });
+    const after = createCard({ id: "new", file: "new.md", anchor: { type: "note" }, title: "New", now: NOW + 500 });
+    const resetAt = NOW + 100;
+    const a: GardenData = {
+      ...emptyGardenData(),
+      cards: { old: before, new: after, gone: { ...before, id: "gone" } },
+      deleted: { gone: NOW + 200 },
+      resetAt,
+    };
+    const b: GardenData = {
+      ...emptyGardenData(),
+      cards: { old: before, gone: { ...before, id: "gone", updatedAt: NOW + 900 } },
+    };
+
+    const merged = mergeGardenData(a, b);
+    expect(Object.keys(merged.cards)).toEqual(["new"]);
+    expect(merged.deleted.gone).toBe(NOW + 200);
+    expect(merged.resetAt).toBe(resetAt);
+  });
+
+  it("writes the same bytes regardless of insertion order", () => {
+    const first = sampleData();
+    const second = sampleData();
+    second.daily = {};
+    second.writers = { b: { "2026-01-10": { reviews: 1, again: 0 } }, a: { "2026-01-10": { reviews: 2, again: 0 } }, ...second.writers };
+    second.daily = { "2026-01-10": { reviews: 3, again: 1 } };
+    expect(serializeGardenData(sampleData())).toBe(serializeGardenData({ ...sampleData() }));
+    expect(Object.keys(JSON.parse(serializeGardenData(second)).writers)).toEqual(["a", "b", "legacy"]);
+    expect(first.resetAt).toBe(0);
   });
 
   it("serializes compact data without changing what is stored", () => {

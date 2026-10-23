@@ -11,7 +11,7 @@ export interface StatsSummary {
 export function countDue(cards: Card[], now: number, dayStartHour: number): number {
   const end = logicalDayEnd(now, dayStartHour);
   return cards.filter(
-    (card) => !card.suspended && !card.missing && card.trashedAt === null && card.due < end,
+    (card) => !card.suspended && !card.missing && !card.orphaned && card.trashedAt === null && card.due < end,
   ).length;
 }
 
@@ -20,7 +20,9 @@ export function overdueDays(due: number, now: number, dayStartHour: number): num
 }
 
 export function buildQueue(cards: Card[], now: number, dayStartHour: number, newCardsPerDay: number): Card[] {
-  const active = cards.filter((card) => !card.suspended && !card.missing && card.trashedAt === null);
+  const active = cards.filter(
+    (card) => !card.suspended && !card.missing && !card.orphaned && card.trashedAt === null,
+  );
   const end = logicalDayEnd(now, dayStartHour);
 
   // Anything that has been seen before and is due counts as a review, even if
@@ -91,8 +93,14 @@ export function computeStats(
 ): StatsSummary {
   return {
     due: countDue(cards, now, settings.dayStartHour),
-    newCards: cards.filter((card) => !card.suspended && !card.missing && card.trashedAt === null && card.reps === 0)
-      .length,
+    newCards: cards.filter(
+      (card) =>
+        !card.suspended &&
+        !card.missing &&
+        !card.orphaned &&
+        card.trashedAt === null &&
+        card.firstReview === null,
+    ).length,
     streak: computeStreak(daily, now, settings.dayStartHour),
     retention: computeRetention(daily, settings.retentionWindowDays, now, settings.dayStartHour),
   };

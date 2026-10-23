@@ -32,6 +32,7 @@ function makeCard(overrides: Partial<Card> = {}): Card {
     firstReview: NOW - 5 * DAY_MS,
     suspended: false,
     missing: false,
+    orphaned: false,
     trashedAt: null,
     updatedAt: NOW - DAY_MS,
     ...overrides,
@@ -80,7 +81,7 @@ describe("resetCard", () => {
     expect(reset.ease).toBe(INITIAL_EASE);
     expect(reset.due).toBe(NOW);
     expect(reset.lastReview).toBeNull();
-    expect(reset.firstReview).toBe(makeCard().firstReview);
+    expect(reset.firstReview).toBeNull();
     expect(reset.updatedAt).toBe(NOW);
   });
 });

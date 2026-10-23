@@ -5,10 +5,16 @@ export interface VaultEventHost {
   notify(message: string, timeout?: number): void;
 }
 
+function isUnderPath(filePath: string, path: string): boolean {
+  return filePath === path || filePath.startsWith(`${path}/`);
+}
+
 export function handleVaultDelete(host: VaultEventHost, filePath: string): void {
-  const affected = host.store.getAllCards().filter((card) => card.file === filePath);
+  const affected = host.store
+    .getAllCards()
+    .filter((card) => !card.missing && isUnderPath(card.file, filePath));
   if (affected.length === 0) return;
-  host.store.setFileMissing(filePath, true);
+  host.store.setFileMissingPrefix(filePath, true);
   host.notify(
     affected.length === 1
       ? "1 plant lost its note and is held back. Restore the note or remove it in Manage plants."

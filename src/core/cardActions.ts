@@ -23,6 +23,7 @@ export function resetCard(card: Card, now: number): Card {
     ease: INITIAL_EASE,
     due: now,
     lastReview: null,
+    firstReview: null,
     updatedAt: now,
   };
 }

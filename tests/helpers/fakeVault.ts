@@ -15,6 +15,8 @@ export class FakeAdapter {
   writeCount = 0;
   removeCount = 0;
   readCount = 0;
+  failWrites = 0;
+  failRenames = 0;
 
   private clock = 1_000;
 
@@ -36,6 +38,10 @@ export class FakeAdapter {
 
   async write(path: string, data: string): Promise<void> {
     this.writeCount += 1;
+    if (this.failWrites > 0) {
+      this.failWrites -= 1;
+      throw new Error("Simulated write failure");
+    }
     this.files.set(path, data);
     this.mtimes.set(path, this.tick());
   }
@@ -47,6 +53,10 @@ export class FakeAdapter {
   }
 
   async rename(from: string, to: string): Promise<void> {
+    if (this.failRenames > 0) {
+      this.failRenames -= 1;
+      throw new Error("Simulated rename failure");
+    }
     const value = this.files.get(from);
     if (value === undefined) throw new Error(`No such file: ${from}`);
     const mtime = this.mtimes.get(from);

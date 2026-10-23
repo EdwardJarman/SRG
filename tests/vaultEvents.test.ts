@@ -49,6 +49,21 @@ describe("vault events", () => {
     expect(notices[0]).toContain("2 plants lost their notes");
   });
 
+  it("holds back every plant under a deleted folder", async () => {
+    const { store, host, notices } = await setup([
+      card("a", "Notes/Sub/A.md"),
+      card("b", "Notes/Sub/B.md"),
+      card("c", "Notes/Other.md"),
+    ]);
+
+    handleVaultDelete(host, "Notes/Sub");
+
+    expect(store.getCard("a")?.missing).toBe(true);
+    expect(store.getCard("b")?.missing).toBe(true);
+    expect(store.getCard("c")?.missing).toBe(false);
+    expect(notices[0]).toContain("2 plants lost their notes");
+  });
+
   it("says nothing when a deleted note has no plants", async () => {
     const { host, notices } = await setup();
 

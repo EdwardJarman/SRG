@@ -16,6 +16,7 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
   cards!: CardService;
   settings: GardenSettings = sanitizeSettings(null);
   private statusBarEl: HTMLElement | null = null;
+  private lastStoreProblem: string | null = null;
 
   async onload(): Promise<void> {
     this.settings = sanitizeSettings((await this.loadData()) as Partial<GardenSettings> | null);
@@ -64,7 +65,9 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
         }
         if (file.path.startsWith(`${GARDEN_FOLDER}/`) && /conflict/i.test(file.path)) {
           void this.store.syncConflictCopies();
+          return;
         }
+        void this.cards.reconcileFileAnchors(file.path);
       }),
     );
 
@@ -112,9 +115,18 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     this.addRibbonIcon("sprout", "Spaced Repetition Garden: open garden", () => void this.openGarden());
 
     this.statusBarEl = this.addStatusBarItem();
-    this.register(this.store.onChange(() => this.updateStatusBar()));
+    this.register(
+      this.store.onChange(() => {
+        this.updateStatusBar();
+        this.notifyStoreProblem();
+      }),
+    );
     this.registerInterval(window.setInterval(() => this.updateStatusBar(), 5 * 60 * 1000));
     this.updateStatusBar();
+
+    this.app.workspace.onLayoutReady(() => {
+      void this.reconcileVault();
+    });
 
     this.register(
       bindFlushOnBlur(window, document, () => {
@@ -153,6 +165,10 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
   }
 
   openReviewDue(): void {
+    if (this.store.isReadOnly()) {
+      new Notice(this.store.getReadOnlyReason() ?? "This garden is read-only.");
+      return;
+    }
     const now = Date.now();
     const queue = buildQueueForSettings(this.store.getCards(), now, this.settings);
     if (queue.length === 0) {
@@ -163,20 +179,62 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
   }
 
   openCardReview(card: Card): void {
+    if (this.store.isReadOnly()) {
+      new Notice(this.store.getReadOnlyReason() ?? "This garden is read-only.");
+      return;
+    }
     const latest = this.store.getCard(card.id) ?? card;
     new ReviewModal(this.app, this.cards, [latest]).open();
   }
 
   updateStatusBar(): void {
     if (!this.statusBarEl) return;
+    const problem = this.store.getStatusProblem();
+    if (problem) {
+      this.statusBarEl.setText("Garden: save problem");
+      this.statusBarEl.setAttribute("aria-label", problem);
+      this.statusBarEl.title = problem;
+      return;
+    }
     const stats = computeStats(this.store.getCards(), this.store.getData().daily, Date.now(), this.settings);
     const dueText = stats.due === 0 ? "all clear" : `${stats.due} due`;
     const retentionText = stats.retention === null ? "-" : `${Math.round(stats.retention * 100)}%`;
     this.statusBarEl.setText(`Garden: ${dueText} · ${stats.streak}d · ${retentionText}`);
     this.statusBarEl.setAttribute("aria-label", "Cards due today · review streak · retention rate");
+    this.statusBarEl.title = "";
+  }
+
+  private notifyStoreProblem(): void {
+    const problem = this.store.getStatusProblem();
+    if (problem === this.lastStoreProblem) return;
+    this.lastStoreProblem = problem;
+    if (problem) new Notice(problem, 12000);
+  }
+
+  private async reconcileVault(): Promise<void> {
+    const { markedMissing, restored } = await this.store.reconcileMissingNotes();
+    if (markedMissing === 0 && restored === 0) return;
+    const parts: string[] = [];
+    if (markedMissing > 0) {
+      parts.push(
+        markedMissing === 1
+          ? "1 plant lost its note while the garden was closed"
+          : `${markedMissing} plants lost their notes while the garden was closed`,
+      );
+    }
+    if (restored > 0) {
+      parts.push(
+        restored === 1 ? "1 plant found its note again" : `${restored} plants found their notes again`,
+      );
+    }
+    new Notice(`${parts.join("; ")}.`, 10000);
   }
 
   private plantFromView(editor: Editor, file: TFile | null): void {
+    if (this.store.isReadOnly()) {
+      new Notice(this.store.getReadOnlyReason() ?? "This garden is read-only.");
+      return;
+    }
     if (!file) {
       new Notice("Open a note first - a card is planted from the note you are reading.");
       return;
@@ -184,6 +242,10 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     const outcome = plantFlashcard(this.store, editor, file);
     if (outcome.status === "error") {
       new Notice(`Could not plant a card: ${outcome.description}`);
+      return;
+    }
+    if (outcome.status === "trashed") {
+      new Notice(`Already planted, but in the trash: ${outcome.description}. Restore it in Manage plants.`);
       return;
     }
     new Notice(`${outcome.status === "planted" ? "Planted" : "Already planted"}: ${outcome.description}.`);

@@ -36,6 +36,7 @@ export interface Card {
   firstReview: number | null;
   suspended: boolean;
   missing: boolean;
+  orphaned: boolean;
   trashedAt: number | null;
   updatedAt: number;
 }
@@ -45,10 +46,15 @@ export interface DayStats {
   again: number;
 }
 
+export type WriterStats = Record<string, Record<string, DayStats>>;
+
 export interface GardenData {
   version: number;
   cards: Record<string, Card>;
   daily: Record<string, DayStats>;
+  writers: WriterStats;
+  deleted: Record<string, number>;
+  resetAt: number;
 }
 
 export interface GardenSettings {

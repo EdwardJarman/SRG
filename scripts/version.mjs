@@ -8,11 +8,17 @@ export function readPackageVersion() {
 }
 
 export function tagToVersion(tag) {
-  return tag.replace(/^v/, "");
+  return tag;
 }
 
 export function versionToTag(version) {
-  return `v${version}`;
+  return version;
+}
+
+export function assertVersionTag(tag, version) {
+  if (tag !== version) {
+    throw new Error(`Release tag ${tag} must exactly match package.json version ${version}.`);
+  }
 }
 
 export function syncManifestVersion(version) {

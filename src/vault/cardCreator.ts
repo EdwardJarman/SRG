@@ -14,6 +14,7 @@ import { randomId } from "../utils/random";
 export type PlantOutcome =
   | { status: "planted"; description: string }
   | { status: "already"; description: string }
+  | { status: "trashed"; description: string }
   | { status: "error"; description: string };
 
 export function plantFlashcard(store: GardenStore, editor: Editor, file: TFile): PlantOutcome {
@@ -87,8 +88,9 @@ function finalize(
   now: number,
 ): PlantOutcome {
   const description = `${kind} "${title}"`;
-  if (store.findCard(file.path, anchor)) {
-    return { status: "already", description };
+  const existing = store.findCard(file.path, anchor, true);
+  if (existing) {
+    return { status: existing.trashedAt === null ? "already" : "trashed", description };
   }
   let id = randomId();
   for (let guard = 0; guard < 5 && store.getCard(id) !== null; guard++) {

@@ -1,6 +1,6 @@
 {
   "name": "spaced-repetition-garden",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turn any note or heading into a flashcard - your vault becomes a living garden that blooms when you review on time.",
   "main": "main.js",
   "scripts": {
