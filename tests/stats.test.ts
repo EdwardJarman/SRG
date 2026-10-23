@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DAY_MS, dayKeyOffset, logicalDayKey, logicalDayStart } from "../src/core/dates";
 import { createCard } from "../src/core/scheduler";
-import { buildQueue, computeRetention, computeStreak, countDue, overdueDays } from "../src/core/stats";
-import { Card, DayStats } from "../src/core/types";
+import {
+  buildQueue,
+  buildQueueForSettings,
+  computeRetention,
+  computeStats,
+  computeStreak,
+  countDue,
+  overdueDays,
+} from "../src/core/stats";
+import { Card, DayStats, DEFAULT_SETTINGS } from "../src/core/types";
 
 const HOUR = 4;
 const NOW = new Date(2026, 0, 10, 10, 0, 0).getTime();
@@ -152,5 +160,29 @@ describe("buildQueue with lapsed and missing cards", () => {
     const missing = makeCard("missing", { reps: 3, due: dayStart, missing: true });
     expect(buildQueue([missing], NOW, HOUR, 5)).toHaveLength(0);
     expect(countDue([missing], NOW, HOUR)).toBe(0);
+  });
+
+  it("leaves out trashed plants everywhere", () => {
+    const dayStart = logicalDayStart(NOW, HOUR);
+    const trashed = makeCard("trashed", { reps: 3, due: dayStart, trashedAt: NOW });
+    expect(buildQueue([trashed], NOW, HOUR, 5)).toHaveLength(0);
+    expect(countDue([trashed], NOW, HOUR)).toBe(0);
+    const stats = computeStats([trashed], {}, NOW, DEFAULT_SETTINGS);
+    expect(stats.due).toBe(0);
+    expect(stats.newCards).toBe(0);
+  });
+
+  it("buildQueueForSettings matches the queue built from its settings", () => {
+    const dayStart = logicalDayStart(NOW, HOUR);
+    const cards = [
+      makeCard("due", { reps: 1, due: dayStart }),
+      makeCard("new1", { created: NOW - 10 }),
+      makeCard("new2", { created: NOW - 5 }),
+    ];
+    const settings = { ...DEFAULT_SETTINGS, dayStartHour: HOUR, newCardsPerDay: 1 };
+    expect(buildQueueForSettings(cards, NOW, settings).map((card) => card.id)).toEqual([
+      "due",
+      "new1",
+    ]);
   });
 });

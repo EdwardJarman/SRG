@@ -5,12 +5,31 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
 ### Added
 
 - Card management: right-click a plant in the garden to review it, open its
-  note, suspend it, reschedule it, reset its progress or remove it.
-- A "Manage plants" view listing every card with search, a bed filter and a
-  state filter, and per-card actions.
+  note, copy its anchor, suspend it, reschedule it, reset its progress or move
+  it to the trash.
+- A "Manage plants" view listing every card with search by title, file or
+  anchor, a bed filter, state filters for due, new, suspended, missing and
+  trashed plants, and per-card actions.
+- Trash: removed plants keep their scheduling history and can be restored from
+  the manage view or from the undo button on the notice. Emptying the trash
+  deletes them permanently after a confirmation.
+- "Remove missing" moves every plant whose note is gone to the trash.
+- "Reset garden" clears the whole garden after writing a timestamped backup and
+  asking you to type `reset`.
+- Missing plants are now drawn as pale ghost plants with a dashed halo.
+- Anchor labels are shown on hover in the garden, in the manage list and in the
+  review modal, and `Copy anchor` copies a wikilink to the exact note, heading
+  or block.
+- Pinch-to-zoom and a larger touch hit radius on mobile.
+- `npm run bench`: 1,000-card benchmarks for the queue, stats, layout,
+  serialization and a whole-file write.
+- `npm run release:dry-run`: build and package a release without committing,
+  tagging or uploading.
 - Review queue: undo the last grade, put a card off until tomorrow, or
   reschedule it to a date you pick.
 - A "Bury siblings after a lapse" setting: when a plant lapses, the other
@@ -25,6 +44,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- The garden's Review button now shows the real queue length, including the
+  daily new-card allowance, instead of every due card.
+- Writes merge with the file on disk before saving, so two Obsidian windows no
+  longer overwrite each other's changes. `cards.json` is monitored for external
+  edits, and Obsidian conflicted copies are merged in.
+- The data file switches to compact JSON at 250 cards, and daily history is
+  pruned to roughly three years.
 - Undo now steps back through the whole session, not just the last grade.
 - A selection that runs over several paragraphs plants the section it sits in
   rather than only its last paragraph.
@@ -34,6 +60,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- Undo now actually restores the card's pre-grade schedule instead of writing
+  the graded card back unchanged.
+- Daily stats with malformed day keys are dropped instead of being kept forever.
+- Resetting the garden moves conflicted copies aside first, so they cannot merge
+  the old plants back in on the next load.
+- The review summary now counts the same daily queue as the Review button, and a
+  failed reset no longer reports success.
+- A missing-note notice for one plant now uses singular wording.
 - Release notes no longer drop the last line of the matching changelog section.
 - The release workflow updates an existing release instead of failing when a
   tag is pushed again.

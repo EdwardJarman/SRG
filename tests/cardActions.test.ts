@@ -32,6 +32,7 @@ function makeCard(overrides: Partial<Card> = {}): Card {
     firstReview: NOW - 5 * DAY_MS,
     suspended: false,
     missing: false,
+    trashedAt: null,
     updatedAt: NOW - DAY_MS,
     ...overrides,
   };

@@ -36,6 +36,7 @@ export interface Card {
   firstReview: number | null;
   suspended: boolean;
   missing: boolean;
+  trashedAt: number | null;
   updatedAt: number;
 }
 

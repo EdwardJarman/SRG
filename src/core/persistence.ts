@@ -1,14 +1,19 @@
+import { isDayKey, shiftDayKey } from "./dates";
 import { clampEase, INITIAL_EASE } from "./scheduler";
 import { Anchor, Card, DayStats, GardenData } from "./types";
 
-export const DATA_VERSION = 1;
+export const DATA_VERSION = 2;
+
+// Keep more than a year of daily history so the stats view can grow, but never
+// let the map grow forever.
+export const DAILY_HISTORY_DAYS = 1100;
 
 export function emptyGardenData(): GardenData {
   return { version: DATA_VERSION, cards: {}, daily: {} };
 }
 
-export function serializeGardenData(data: GardenData): string {
-  return JSON.stringify(data, null, 1);
+export function serializeGardenData(data: GardenData, compact = false): string {
+  return compact ? JSON.stringify(data) : JSON.stringify(data, null, 1);
 }
 
 export function deserializeGardenData(raw: string): GardenData | null {
@@ -48,7 +53,7 @@ export function sanitizeGardenData(input: unknown): GardenData | null {
   const daily: Record<string, DayStats> = {};
   const dailyInput = isRecord(input.daily) ? input.daily : {};
   for (const [key, rawDay] of Object.entries(dailyInput)) {
-    if (!isRecord(rawDay)) continue;
+    if (!isDayKey(key) || !isRecord(rawDay)) continue;
     const reviews = toNonNegativeInt(rawDay.reviews, 0);
     const again = Math.min(reviews, toNonNegativeInt(rawDay.again, 0));
     if (reviews > 0) daily[key] = { reviews, again };
@@ -69,13 +74,29 @@ export function mergeGardenData(a: GardenData, b: GardenData): GardenData {
   for (const key of keys) {
     const fromA = a.daily[key];
     const fromB = b.daily[key];
-    daily[key] = {
-      reviews: Math.max(fromA?.reviews ?? 0, fromB?.reviews ?? 0),
-      again: Math.max(fromA?.again ?? 0, fromB?.again ?? 0),
-    };
+    const reviews = Math.max(fromA?.reviews ?? 0, fromB?.reviews ?? 0);
+    const again = Math.min(reviews, Math.max(fromA?.again ?? 0, fromB?.again ?? 0));
+    if (reviews > 0) daily[key] = { reviews, again };
   }
 
   return { version: DATA_VERSION, cards, daily };
+}
+
+export function pruneDaily(
+  daily: Record<string, DayStats>,
+  todayKey: string,
+  keepDays = DAILY_HISTORY_DAYS,
+): number {
+  if (!isDayKey(todayKey)) return 0;
+  const cutoff = shiftDayKey(todayKey, -Math.max(1, keepDays));
+  let removed = 0;
+  for (const key of Object.keys(daily)) {
+    if (isDayKey(key) && key < cutoff) {
+      delete daily[key];
+      removed += 1;
+    }
+  }
+  return removed;
 }
 
 function sanitizeCard(id: string, raw: unknown): Card | null {
@@ -103,6 +124,7 @@ function sanitizeCard(id: string, raw: unknown): Card | null {
     firstReview: toNullableTimestamp(raw.firstReview),
     suspended: raw.suspended === true,
     missing: raw.missing === true,
+    trashedAt: toNullableTimestamp(raw.trashedAt),
     updatedAt,
   };
 }

@@ -20,6 +20,7 @@ function makeCard(id: string, file: string, overrides: Partial<Card> = {}): Card
     firstReview: NOW - 5_000,
     suspended: false,
     missing: false,
+    trashedAt: null,
     updatedAt: NOW - 1_000,
     ...overrides,
   };
@@ -30,6 +31,7 @@ class FakeHost implements SessionHost {
   settings: GardenSettings = { ...DEFAULT_SETTINGS };
   graded: Array<{ id: string; grade: Grade }> = [];
   ungraded: string[] = [];
+  ungradedCards: Card[] = [];
   postponed: string[] = [];
   rescheduled: Array<{ id: string; due: number }> = [];
 
@@ -50,6 +52,7 @@ class FakeHost implements SessionHost {
 
   ungrade(card: Card, _dayKey: string, _wasAgain: boolean): void {
     this.ungraded.push(card.id);
+    this.ungradedCards.push(card);
   }
 
   postpone(card: Card): void {
@@ -128,6 +131,7 @@ describe("ReviewSession", () => {
     expect(session.undo()).toBe(true);
     expect(session.reviewed).toBe(0);
     expect(host.ungraded).toEqual(["a"]);
+    expect(host.ungradedCards[0]?.reps).toBe(2);
     expect(session.next()?.id).toBe("a");
   });
 

@@ -58,6 +58,16 @@ describe("cardCondition", () => {
     expect(result.condition).toBe("blooming");
     expect(result.daysUntilDue).toBe(0);
   });
+
+  it("marks missing notes before any wilting or blooming state", () => {
+    const result = cardCondition(
+      makeCard({ reps: 8, due: DAY_START - 5 * DAY_MS, missing: true }),
+      NOW,
+      HOUR,
+    );
+    expect(result.condition).toBe("missing");
+    expect(result.overdueDays).toBe(0);
+  });
 });
 
 describe("buildPlantModel", () => {
@@ -94,6 +104,11 @@ describe("plantStatusText", () => {
 
     const waiting = buildPlantModel(makeCard({ reps: 0, due: DAY_START + 3 * DAY_MS }), NOW, HOUR);
     expect(plantStatusText(waiting)).toBe("Seed - due in 3d");
+  });
+
+  it("describes missing notes as held back", () => {
+    const missing = buildPlantModel(makeCard({ reps: 6, missing: true }), NOW, HOUR);
+    expect(plantStatusText(missing)).toBe("Note missing - held back");
   });
 
   it("describes wilting, blooming and healthy plants", () => {

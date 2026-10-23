@@ -19,6 +19,10 @@ export interface GardenPalette {
   wiltStem: string;
   wiltLeaf: string;
   wiltPetal: string;
+  missingStem: string;
+  missingLeaf: string;
+  missingHalo: string;
+  missingMark: string;
   hover: string;
   dot: string;
   shadow: string;
@@ -40,6 +44,10 @@ export function paletteForTheme(dark: boolean): GardenPalette {
         wiltStem: "#9c8448",
         wiltLeaf: "#a89253",
         wiltPetal: "#b9a06a",
+        missingStem: "#8b9690",
+        missingLeaf: "#98a49d",
+        missingHalo: "rgba(170,190,180,0.5)",
+        missingMark: "rgba(220,235,225,0.75)",
         hover: "rgba(255,196,90,0.9)",
         dot: "rgba(255,255,255,0.045)",
         shadow: "rgba(0,0,0,0.35)",
@@ -58,6 +66,10 @@ export function paletteForTheme(dark: boolean): GardenPalette {
         wiltStem: "#a08a4f",
         wiltLeaf: "#b09a58",
         wiltPetal: "#bda065",
+        missingStem: "#8a9188",
+        missingLeaf: "#97a093",
+        missingHalo: "rgba(95,110,95,0.5)",
+        missingMark: "rgba(70,80,70,0.65)",
         hover: "rgba(230,140,30,0.95)",
         dot: "rgba(0,0,0,0.055)",
         shadow: "rgba(0,0,0,0.14)",
@@ -103,7 +115,7 @@ export function renderGarden(ctx: CanvasRenderingContext2D, options: GardenRende
   ctx.restore();
 }
 
-export function findPlantAt(layout: GardenLayout, x: number, y: number): PlacedPlant | null {
+export function findPlantAt(layout: GardenLayout, x: number, y: number, minRadius = 20): PlacedPlant | null {
   let best: PlacedPlant | null = null;
   let bestDist = Infinity;
   for (const bed of layout.beds) {
@@ -114,7 +126,7 @@ export function findPlantAt(layout: GardenLayout, x: number, y: number): PlacedP
       const dx = plant.x - x;
       const dy = plant.y - 14 - y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const hitRadius = Math.max(plant.radius, 20);
+      const hitRadius = Math.max(plant.radius, minRadius);
       if (dist <= hitRadius && dist < bestDist) {
         best = plant;
         bestDist = dist;
@@ -218,13 +230,14 @@ function drawPlant(
   hovered: boolean,
 ): void {
   const model = plant.model;
-  const wilt = model.condition === "wilting";
-  const bloom = model.condition === "blooming";
+  const missing = model.condition === "missing";
+  const wilt = !missing && model.condition === "wilting";
+  const bloom = !missing && model.condition === "blooming";
 
   ctx.save();
   ctx.translate(plant.x, plant.y);
-  if (model.card.suspended) ctx.globalAlpha = 0.45;
-  if (model.card.missing) ctx.globalAlpha = 0.25;
+  if (missing) ctx.globalAlpha = 0.55;
+  else if (model.card.suspended) ctx.globalAlpha = 0.45;
 
   ctx.fillStyle = palette.shadow;
   ctx.beginPath();
@@ -233,42 +246,47 @@ function drawPlant(
 
   if (bloom) drawBloomRing(ctx, model, time, reduceMotion);
 
-  const sway = reduceMotion || model.stage === "seed" ? 0 : Math.sin(time * model.swaySpeed * 1.7 + model.swayPhase);
-  const droop = wilt ? 1 : 0;
-  const bend = model.seed % 2 === 0 ? 1 : -1;
-
-  if (model.stage === "seed") {
-    drawSeed(ctx, palette, wilt);
+  if (missing) {
+    drawMissingPlant(ctx, model, palette, reduceMotion);
   } else {
-    const stemColor = wilt ? palette.wiltStem : palette.stem;
-    const leafColor = wilt ? palette.wiltLeaf : palette.leaf;
-    drawStem(ctx, model, sway, droop, bend, stemColor);
-    const top = stemTop(model, sway, droop, bend);
+    const sway =
+      reduceMotion || model.stage === "seed" ? 0 : Math.sin(time * model.swaySpeed * 1.7 + model.swayPhase);
+    const droop = wilt ? 1 : 0;
+    const bend = model.seed % 2 === 0 ? 1 : -1;
 
-    if (model.stage === "sprout") {
-      drawLeaf(ctx, top.x * 0.7, top.y * 0.75, 1, 7 * model.size, leafColor);
-      drawLeaf(ctx, top.x * 0.7, top.y * 0.75, -1, 7 * model.size, leafColor);
-    } else if (model.stage === "growing") {
-      const p1 = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.45);
-      const p2 = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.78);
-      drawLeaf(ctx, p1[0], p1[1], 1, 9 * model.size, leafColor);
-      drawLeaf(ctx, p2[0], p2[1], -1, 9 * model.size, leafColor);
-      ctx.fillStyle = wilt ? palette.wiltPetal : mixCss(leafColor, rgbCss(petalRgb(model.hue, wilt)), 0.45);
-      ctx.beginPath();
-      ctx.arc(top.x, top.y, 4 * model.size, 0, TAU);
-      ctx.fill();
+    if (model.stage === "seed") {
+      drawSeed(ctx, palette, wilt);
     } else {
-      const base = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.35);
-      const mid = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.62);
-      const upper = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.85);
-      drawLeaf(ctx, base[0], base[1], 1, 10 * model.size, leafColor);
-      drawLeaf(ctx, mid[0], mid[1], -1, 10 * model.size, leafColor);
-      drawLeaf(ctx, upper[0], upper[1], 1, 8 * model.size, leafColor);
+      const stemColor = wilt ? palette.wiltStem : palette.stem;
+      const leafColor = wilt ? palette.wiltLeaf : palette.leaf;
+      drawStem(ctx, model, sway, droop, bend, stemColor);
+      const top = stemTop(model, sway, droop, bend);
 
-      const petals = model.card.reps >= 8 ? 6 : 5;
-      const flowerR = (model.card.reps >= 8 ? 12 : 10.5) * model.size;
-      drawFlower(ctx, top.x, top.y, flowerR, petals, model, wilt, time, reduceMotion);
-      if (wilt) drawFallenPetals(ctx, palette);
+      if (model.stage === "sprout") {
+        drawLeaf(ctx, top.x * 0.7, top.y * 0.75, 1, 7 * model.size, leafColor);
+        drawLeaf(ctx, top.x * 0.7, top.y * 0.75, -1, 7 * model.size, leafColor);
+      } else if (model.stage === "growing") {
+        const p1 = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.45);
+        const p2 = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.78);
+        drawLeaf(ctx, p1[0], p1[1], 1, 9 * model.size, leafColor);
+        drawLeaf(ctx, p2[0], p2[1], -1, 9 * model.size, leafColor);
+        ctx.fillStyle = wilt ? palette.wiltPetal : mixCss(leafColor, rgbCss(petalRgb(model.hue, wilt)), 0.45);
+        ctx.beginPath();
+        ctx.arc(top.x, top.y, 4 * model.size, 0, TAU);
+        ctx.fill();
+      } else {
+        const base = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.35);
+        const mid = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.62);
+        const upper = quadPoint([0, 0], [top.x * 0.25, top.y * 0.55], [top.x, top.y], 0.85);
+        drawLeaf(ctx, base[0], base[1], 1, 10 * model.size, leafColor);
+        drawLeaf(ctx, mid[0], mid[1], -1, 10 * model.size, leafColor);
+        drawLeaf(ctx, upper[0], upper[1], 1, 8 * model.size, leafColor);
+
+        const petals = model.card.reps >= 8 ? 6 : 5;
+        const flowerR = (model.card.reps >= 8 ? 12 : 10.5) * model.size;
+        drawFlower(ctx, top.x, top.y, flowerR, petals, model, wilt, time, reduceMotion);
+        if (wilt) drawFallenPetals(ctx, palette);
+      }
     }
   }
 
@@ -283,6 +301,45 @@ function drawPlant(
   }
 
   ctx.restore();
+}
+
+function drawMissingPlant(
+  ctx: CanvasRenderingContext2D,
+  model: PlantModel,
+  palette: GardenPalette,
+  reduceMotion: boolean,
+): void {
+  const sway = reduceMotion ? 0 : Math.sin(model.swayPhase) * 1.5;
+  const height = Math.max(18, stemHeight(model) * 0.72);
+
+  ctx.strokeStyle = palette.missingHalo;
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([4, 5]);
+  ctx.beginPath();
+  ctx.arc(0, -height * 0.45, 19 + model.size * 5, 0, TAU);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = palette.missingStem;
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(sway * 0.3, -height * 0.55, sway + 4, -height);
+  ctx.stroke();
+
+  drawLeaf(ctx, sway + 1, -height * 0.62, 1, 6.5 * model.size, palette.missingLeaf);
+  drawLeaf(ctx, sway + 2.5, -height * 0.42, -1, 5.8 * model.size, palette.missingLeaf);
+
+  ctx.strokeStyle = palette.missingMark;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(sway + 0.5, -height - 3);
+  ctx.lineTo(sway + 7.5, -height + 4);
+  ctx.moveTo(sway + 7.5, -height - 3);
+  ctx.lineTo(sway + 0.5, -height + 4);
+  ctx.stroke();
+  ctx.lineCap = "butt";
 }
 
 function stemHeight(model: PlantModel): number {

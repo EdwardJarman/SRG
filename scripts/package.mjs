@@ -30,13 +30,13 @@ function zipFolder(stageDir, zipPath) {
   run("zip", ["-r", zipPath, PLUGIN_ID], join(ROOT, "dist"));
 }
 
-export function packagePlugin() {
+export function packagePlugin({ syncVersion = true } = {}) {
   const version = readVersion();
   const dist = join(ROOT, "dist");
   const stage = join(dist, PLUGIN_ID);
   const zipPath = join(dist, `${PLUGIN_ID}-${version}.zip`);
 
-  syncManifestVersion(version);
+  if (syncVersion) syncManifestVersion(version);
   run(process.execPath, [join(ROOT, "esbuild.config.mjs"), "production"]);
 
   rmSync(dist, { recursive: true, force: true });

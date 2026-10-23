@@ -162,4 +162,14 @@ describe("findPlantAt", () => {
     expect(hit?.model.card.id).toBe(plant.model.card.id);
     expect(findPlantAt(layout, -400, -400)).toBeNull();
   });
+
+  it("accepts a larger touch radius for coarse pointers", () => {
+    const layout = buildGardenLayout(
+      models([{ id: "srg-a", file: "Notes/a.md", created: NOW }]),
+    );
+    const plant = layout.beds[0].plants[0];
+    const x = plant.x + 60;
+    expect(findPlantAt(layout, x, plant.y, 20)).toBeNull();
+    expect(findPlantAt(layout, x, plant.y, 100)?.model.card.id).toBe(plant.model.card.id);
+  });
 });

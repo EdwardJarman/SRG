@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  DAILY_HISTORY_DAYS,
   DATA_VERSION,
   deserializeGardenData,
   emptyGardenData,
   mergeGardenData,
+  pruneDaily,
   sanitizeGardenData,
   serializeGardenData,
 } from "../src/core/persistence";
+import { shiftDayKey } from "../src/core/dates";
 import { createCard } from "../src/core/scheduler";
 import { GardenData } from "../src/core/types";
 
@@ -93,5 +96,52 @@ describe("garden data persistence", () => {
     expect(merged.cards.x.title).toBe("Renamed");
     expect(Object.keys(merged.cards).sort()).toEqual(["x", "y"]);
     expect(merged.daily["2026-01-10"]).toEqual({ reviews: 5, again: 1 });
+  });
+
+  it("serializes compact data without changing what is stored", () => {
+    const original = sampleData();
+    const pretty = serializeGardenData(original);
+    const compact = serializeGardenData(original, true);
+
+    expect(compact.length).toBeLessThan(pretty.length);
+    expect(deserializeGardenData(compact)).toEqual(original);
+  });
+
+  it("keeps trashedAt and drops invalid daily keys", () => {
+    const card = createCard({
+      id: "a",
+      file: "a.md",
+      anchor: { type: "note" },
+      title: "A",
+      now: NOW,
+    });
+    const restored = sanitizeGardenData({
+      version: DATA_VERSION,
+      cards: { a: { ...card, trashedAt: NOW + 100 } },
+      daily: {
+        "2026-01-10": { reviews: 2, again: 1 },
+        "2026-99-99": { reviews: 4, again: 0 },
+        garbage: { reviews: 99, again: 0 },
+      },
+    });
+
+    expect(restored?.cards.a.trashedAt).toBe(NOW + 100);
+    expect(restored?.daily).toEqual({ "2026-01-10": { reviews: 2, again: 1 } });
+  });
+
+  it("prunes daily history before the cutoff without touching recent days", () => {
+    const today = "2026-01-10";
+    const cutoff = shiftDayKey(today, -DAILY_HISTORY_DAYS);
+    const tooOld = shiftDayKey(cutoff, -1);
+    const daily = {
+      [tooOld]: { reviews: 1, again: 0 },
+      [cutoff]: { reviews: 2, again: 0 },
+      [today]: { reviews: 3, again: 0 },
+    };
+
+    expect(pruneDaily(daily, today)).toBe(1);
+    expect(daily[tooOld]).toBeUndefined();
+    expect(daily[cutoff]).toEqual({ reviews: 2, again: 0 });
+    expect(daily[today]).toEqual({ reviews: 3, again: 0 });
   });
 });

@@ -3,7 +3,7 @@ import { Card } from "../core/types";
 import { fnv1a32, mulberry32 } from "../utils/random";
 
 export type PlantStage = "seed" | "sprout" | "growing" | "established";
-export type PlantCondition = "blooming" | "healthy" | "wilting";
+export type PlantCondition = "blooming" | "healthy" | "wilting" | "missing";
 
 export interface PlantModel {
   card: Card;
@@ -31,6 +31,7 @@ export function cardCondition(
   dayStartHour: number,
 ): { condition: PlantCondition; overdueDays: number; daysUntilDue: number } {
   const daysUntilDue = Math.round((card.due - logicalDayStart(now, dayStartHour)) / DAY_MS);
+  if (card.missing) return { condition: "missing", overdueDays: 0, daysUntilDue };
   if (daysUntilDue < 0) return { condition: "wilting", overdueDays: -daysUntilDue, daysUntilDue };
   if (daysUntilDue <= 1) return { condition: "blooming", overdueDays: 0, daysUntilDue };
   return { condition: "healthy", overdueDays: 0, daysUntilDue };

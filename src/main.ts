@@ -1,12 +1,14 @@
 import { Editor, Notice, Plugin, TFile } from "obsidian";
-import { buildQueue, computeStats } from "./core/stats";
+import { buildQueueForSettings, computeStats } from "./core/stats";
 import { Card, GardenSettings } from "./core/types";
 import { GardenView, GARDEN_VIEW_TYPE } from "./garden/gardenView";
 import { ManageView, MANAGE_VIEW_TYPE } from "./garden/manageView";
+import { bindFlushOnBlur } from "./plugin/lifecycle";
+import { handleVaultCreate, handleVaultDelete, handleVaultRename, VaultEventHost } from "./plugin/vaultEvents";
 import { ReviewModal } from "./review/reviewModal";
 import { CardService } from "./services/cardService";
 import { SRGSettingsTab, sanitizeSettings } from "./settings";
-import { GardenStore, GARDEN_FILE } from "./store/cardStore";
+import { GardenStore, GARDEN_FILE, GARDEN_FOLDER } from "./store/cardStore";
 import { plantFlashcard } from "./vault/cardCreator";
 
 export default class SpacedRepetitionGardenPlugin extends Plugin {
@@ -26,29 +28,43 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     this.registerView(GARDEN_VIEW_TYPE, (leaf) => new GardenView(leaf, this));
     this.registerView(MANAGE_VIEW_TYPE, (leaf) => new ManageView(leaf, this));
 
+    const eventHost: VaultEventHost = {
+      store: this.store,
+      notify: (message, timeout) => {
+        new Notice(message, timeout);
+      },
+    };
+
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        this.store.repointFile(oldPath, file.path);
+        handleVaultRename(eventHost, oldPath, file.path);
       }),
     );
 
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
         if (!(file instanceof TFile)) return;
-        const affected = this.store.getCards().filter((card) => card.file === file.path);
-        if (affected.length === 0) return;
-        this.store.setFileMissing(file.path, true);
-        new Notice(
-          `${affected.length} ${affected.length === 1 ? "plant" : "plants"} lost their note and are held back. Restore the note or remove them in Manage plants.`,
-          8000,
-        );
+        handleVaultDelete(eventHost, file.path);
       }),
     );
 
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (!(file instanceof TFile)) return;
-        this.store.setFileMissing(file.path, false);
+        handleVaultCreate(eventHost, file.path);
+      }),
+    );
+
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (!(file instanceof TFile)) return;
+        if (file.path === GARDEN_FILE) {
+          void this.store.syncFromDisk();
+          return;
+        }
+        if (file.path.startsWith(`${GARDEN_FOLDER}/`) && /conflict/i.test(file.path)) {
+          void this.store.syncConflictCopies();
+        }
       }),
     );
 
@@ -76,6 +92,12 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
       callback: () => void this.openManage(),
     });
 
+    this.addCommand({
+      id: "remove-missing-plants",
+      name: "Move plants with missing notes to trash",
+      callback: () => void this.cards.trashMissing(),
+    });
+
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor, view) => {
         menu.addItem((item) =>
@@ -94,10 +116,11 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
     this.registerInterval(window.setInterval(() => this.updateStatusBar(), 5 * 60 * 1000));
     this.updateStatusBar();
 
-    this.registerDomEvent(window, "blur", () => void this.store.flush());
-    this.registerDomEvent(document, "visibilitychange", () => {
-      if (document.hidden) void this.store.flush();
-    });
+    this.register(
+      bindFlushOnBlur(window, document, () => {
+        void this.store.flush();
+      }),
+    );
 
     this.addSettingTab(new SRGSettingsTab(this.app, this));
   }
@@ -131,12 +154,7 @@ export default class SpacedRepetitionGardenPlugin extends Plugin {
 
   openReviewDue(): void {
     const now = Date.now();
-    const queue = buildQueue(
-      this.store.getCards(),
-      now,
-      this.settings.dayStartHour,
-      this.settings.newCardsPerDay,
-    );
+    const queue = buildQueueForSettings(this.store.getCards(), now, this.settings);
     if (queue.length === 0) {
       new Notice("Nothing is due - your garden is at peace.");
       return;

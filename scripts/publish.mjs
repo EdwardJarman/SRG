@@ -41,29 +41,45 @@ function tagExists(tag) {
   }
 }
 
+const dryRun = process.argv.includes("--dry-run");
 const version = readVersion();
 const tag = versionToTag(version);
 
 const dirty = capture("git", ["status", "--porcelain"]);
 if (dirty) {
-  console.error("Your working tree has changes. Commit them before releasing.");
-  console.error(dirty);
-  process.exit(1);
+  if (!dryRun) {
+    console.error("Your working tree has changes. Commit them before releasing.");
+    console.error(dirty);
+    process.exit(1);
+  }
+  console.warn("Dry run: working tree has changes, so commit and tag steps are skipped.");
 }
 
-if (syncManifestVersion(version)) {
+if (!dryRun && syncManifestVersion(version)) {
   run("git", ["add", "manifest.json", "versions.json"]);
   run("git", ["commit", "-m", `Release ${tag}`]);
   run("git", ["push"]);
 }
 
-if (!tagExists(tag)) {
+if (!dryRun && !tagExists(tag)) {
   run("git", ["tag", "-a", tag, "-m", tag]);
   run("git", ["push", "origin", tag]);
 }
 
-const zip = packagePlugin();
+const zip = packagePlugin({ syncVersion: !dryRun });
 const notes = changelogNotes(readFileSync(join(ROOT, "CHANGELOG.md"), "utf8"), version);
+
+if (dryRun) {
+  const manifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
+  if (manifest.version !== version) {
+    console.warn(`Dry run: manifest.json is at ${manifest.version}, package.json is at ${version}.`);
+  }
+  console.log(`Dry run OK for ${tag}.`);
+  console.log(`Package: ${zip}`);
+  console.log(`Release exists: ${releaseExists(tag) ? "yes (would upload)" : "no (would create)"}`);
+  console.log(`Notes preview:\n${notes}`);
+  process.exit(0);
+}
 
 if (releaseExists(tag)) {
   run("gh", ["release", "upload", tag, zip, "--clobber"]);

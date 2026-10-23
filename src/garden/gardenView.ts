@@ -1,5 +1,6 @@
 import { ItemView, Menu, WorkspaceLeaf } from "obsidian";
-import { computeStats } from "../core/stats";
+import { anchorLabel } from "../core/anchor";
+import { buildQueueForSettings, computeStats } from "../core/stats";
 import type SpacedRepetitionGardenPlugin from "../main";
 import {
   buildGardenLayout,
@@ -47,6 +48,9 @@ export class GardenView extends ItemView {
 
   private pointerActive = false;
   private pointerDragged = false;
+  private pinchMoved = false;
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinch: { distance: number; zoom: number } | null = null;
   private lastPointer = { x: 0, y: 0 };
   private downAt = { x: 0, y: 0 };
 
@@ -133,6 +137,8 @@ export class GardenView extends ItemView {
       this.unsubscribe();
       this.unsubscribe = null;
     }
+    this.pointers.clear();
+    this.pinch = null;
     this.canvas = null;
     this.ctx = null;
     this.tooltipEl = null;
@@ -170,12 +176,10 @@ export class GardenView extends ItemView {
   }
 
   private updateHud(): void {
-    const stats = computeStats(
-      this.plugin.store.getCards(),
-      this.plugin.store.getData().daily,
-      Date.now(),
-      this.plugin.settings,
-    );
+    const now = Date.now();
+    const cards = this.plugin.store.getCards();
+    const stats = computeStats(cards, this.plugin.store.getData().daily, now, this.plugin.settings);
+    const queueLength = buildQueueForSettings(cards, now, this.plugin.settings).length;
     if (this.dueChipEl) {
       this.dueChipEl.setText(stats.due === 0 ? "All clear" : `${stats.due} due`);
       this.dueChipEl.setAttribute("data-tone", stats.due === 0 ? "calm" : "due");
@@ -187,8 +191,12 @@ export class GardenView extends ItemView {
       );
     }
     if (this.reviewBtn) {
-      this.reviewBtn.setText(stats.due === 0 ? "Nothing due" : `Review ${stats.due}`);
-      this.reviewBtn.disabled = stats.due === 0;
+      this.reviewBtn.setText(queueLength === 0 ? "Nothing due" : `Review ${queueLength}`);
+      this.reviewBtn.disabled = queueLength === 0;
+      this.reviewBtn.title =
+        queueLength === 0 && stats.due > 0
+          ? "No new cards are left in today's quota. Raise it in settings to review more."
+          : "Review the cards that are due now";
     }
     if (this.emptyEl) {
       if (this.models.length === 0) this.emptyEl.removeClass("srg-hidden");
@@ -259,11 +267,11 @@ export class GardenView extends ItemView {
   }
 
   private onPointerDown = (evt: PointerEvent): void => {
-    if (evt.button !== 0) return;
-    this.pointerActive = true;
-    this.pointerDragged = false;
-    this.lastPointer = { x: evt.offsetX, y: evt.offsetY };
-    this.downAt = { x: evt.offsetX, y: evt.offsetY };
+    if (evt.pointerType === "mouse" && evt.button !== 0) return;
+    const x = evt.offsetX;
+    const y = evt.offsetY;
+    this.pointers.set(evt.pointerId, { x, y });
+
     if (this.canvas) {
       this.canvas.style.cursor = "grabbing";
       try {
@@ -272,11 +280,55 @@ export class GardenView extends ItemView {
         // Pointer capture is a nicety; dragging still works without it.
       }
     }
+
+    if (this.pointers.size === 1) {
+      this.pointerActive = true;
+      this.pointerDragged = false;
+      this.pinchMoved = false;
+      this.pinch = null;
+      this.lastPointer = { x, y };
+      this.downAt = { x, y };
+      return;
+    }
+
+    if (this.pointers.size === 2) {
+      this.pointerActive = true;
+      this.pointerDragged = true;
+      this.pinchMoved = true;
+      this.hideTooltip();
+      this.hover = null;
+      this.needsRender = true;
+      const [first, second] = Array.from(this.pointers.values());
+      const distance = Math.hypot(first.x - second.x, first.y - second.y);
+      this.pinch = distance > 0 ? { distance, zoom: this.zoom } : null;
+    }
   };
 
   private onPointerMove = (evt: PointerEvent): void => {
     const x = evt.offsetX;
     const y = evt.offsetY;
+    if (this.pointers.has(evt.pointerId)) this.pointers.set(evt.pointerId, { x, y });
+
+    if (this.pointers.size >= 2) {
+      const [first, second] = Array.from(this.pointers.values());
+      if (this.pinch && this.pinch.distance > 0) {
+        const distance = Math.hypot(first.x - second.x, first.y - second.y);
+        const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.pinch.zoom * (distance / this.pinch.distance)));
+        if (next !== this.zoom) {
+          const px = (first.x + second.x) / 2;
+          const py = (first.y + second.y) / 2;
+          const worldX = (px - this.pan.x) / this.zoom;
+          const worldY = (py - this.pan.y) / this.zoom;
+          this.zoom = next;
+          this.pan.x = px - worldX * next;
+          this.pan.y = py - worldY * next;
+          this.userMoved = true;
+          this.needsRender = true;
+        }
+      }
+      return;
+    }
+
     if (this.pointerActive) {
       const dx = x - this.lastPointer.x;
       const dy = y - this.lastPointer.y;
@@ -300,27 +352,45 @@ export class GardenView extends ItemView {
   };
 
   private onPointerUp = (evt: PointerEvent): void => {
-    const clicked = this.pointerActive && !this.pointerDragged;
-    this.pointerActive = false;
+    this.pointers.delete(evt.pointerId);
+    if (this.pointers.size < 2) this.pinch = null;
+
     if (this.canvas) {
-      this.setCanvasCursor(this.hover !== null);
       try {
         this.canvas.releasePointerCapture(evt.pointerId);
       } catch {
         // Already released.
       }
     }
+
+    if (this.pointers.size > 0) {
+      this.pointerActive = true;
+      this.pointerDragged = true;
+      const remaining = Array.from(this.pointers.values())[0];
+      if (remaining) this.lastPointer = remaining;
+      return;
+    }
+
+    const clicked = this.pointerActive && !this.pointerDragged && !this.pinchMoved;
+    this.pointerActive = false;
+    this.pointers.clear();
+    if (this.canvas) this.setCanvasCursor(this.hover !== null);
     if (clicked) this.handleClick(evt.offsetX, evt.offsetY);
   };
 
-  private onPointerCancel = (): void => {
-    this.pointerActive = false;
-    this.pointerDragged = false;
-    this.setCanvasCursor(this.hover !== null);
+  private onPointerCancel = (evt: PointerEvent): void => {
+    this.pointers.delete(evt.pointerId);
+    if (this.pointers.size < 2) this.pinch = null;
+    if (this.pointers.size === 0) {
+      this.pointerActive = false;
+      this.pointerDragged = false;
+      this.pinchMoved = false;
+      this.setCanvasCursor(this.hover !== null);
+    }
   };
 
   private onPointerLeave = (): void => {
-    if (this.pointerActive) return;
+    if (this.pointers.size > 0) return;
     if (this.hover) {
       this.hover = null;
       this.hideTooltip();
@@ -351,7 +421,7 @@ export class GardenView extends ItemView {
   private onContextMenu = (evt: MouseEvent): void => {
     evt.preventDefault();
     const world = this.toWorld(evt.offsetX, evt.offsetY);
-    const plant = findPlantAt(this.layout, world.x, world.y);
+    const plant = findPlantAt(this.layout, world.x, world.y, this.hitRadius(28));
     if (!plant) return;
     const menu = new Menu();
     addCardActions(menu, this.plugin, plant.model.card);
@@ -371,7 +441,7 @@ export class GardenView extends ItemView {
 
   private updateHover(x: number, y: number): void {
     const world = this.toWorld(x, y);
-    const plant = findPlantAt(this.layout, world.x, world.y);
+    const plant = findPlantAt(this.layout, world.x, world.y, this.hitRadius(22));
     const previousId = this.hover ? this.hover.model.card.id : null;
     const nextId = plant ? plant.model.card.id : null;
     if (previousId !== nextId) {
@@ -387,8 +457,12 @@ export class GardenView extends ItemView {
 
   private handleClick(x: number, y: number): void {
     const world = this.toWorld(x, y);
-    const plant = findPlantAt(this.layout, world.x, world.y);
+    const plant = findPlantAt(this.layout, world.x, world.y, this.hitRadius(30));
     if (plant) void this.plugin.openCardReview(plant.model.card);
+  }
+
+  private hitRadius(screenPixels: number): number {
+    return Math.max(18, screenPixels / this.zoom);
   }
 
   private setCanvasCursor(pointer: boolean): void {
@@ -402,6 +476,7 @@ export class GardenView extends ItemView {
     tip.empty();
     tip.createDiv({ cls: "srg-tooltip-title", text: model.card.title || model.card.file });
     tip.createDiv({ cls: "srg-tooltip-sub", text: plantStatusText(model) });
+    tip.createDiv({ cls: "srg-tooltip-anchor", text: anchorLabel(model.card.anchor) });
     tip.createDiv({ cls: "srg-tooltip-file", text: model.card.file });
     tip.removeClass("srg-hidden");
     this.repositionTooltip();

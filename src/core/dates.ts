@@ -37,3 +37,22 @@ export function dayKeyOffset(now: number, dayStartHour: number, offsetDays: numb
   date.setDate(date.getDate() + offsetDays);
   return formatDayKey(date);
 }
+
+export function shiftDayKey(dayKey: string, offsetDays: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!match) return dayKey;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(date.getTime())) return dayKey;
+  date.setDate(date.getDate() + offsetDays);
+  return formatDayKey(date);
+}
+
+export function isDayKey(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, month, day);
+  return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day;
+}

@@ -34,3 +34,11 @@ export function rescheduleCard(card: Card, due: number, now: number): Card {
 export function postponeCard(card: Card, now: number, dayStartHour: number): Card {
   return rescheduleCard(card, logicalDayStart(now, dayStartHour) + DAY_MS, now);
 }
+
+export function trashCard(card: Card, now: number): Card {
+  return { ...card, trashedAt: now, updatedAt: now };
+}
+
+export function restoreCard(card: Card, now: number): Card {
+  return { ...card, trashedAt: null, updatedAt: now };
+}

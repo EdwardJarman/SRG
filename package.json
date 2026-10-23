@@ -1,15 +1,17 @@
 {
   "name": "spaced-repetition-garden",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turn any note or heading into a flashcard - your vault becomes a living garden that blooms when you review on time.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "bench": "vitest bench --run --reporter=verbose",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
     "package": "node scripts/package.mjs",
     "release": "node scripts/publish.mjs",
+    "release:dry-run": "node scripts/publish.mjs --dry-run",
     "deploy": "node scripts/deploy.mjs"
   },
   "keywords": [

@@ -1,8 +1,9 @@
-import { App, Component, MarkdownRenderer, Modal } from "obsidian";
+import { App, Component, MarkdownRenderer, Modal, Notice } from "obsidian";
+import { anchorLabel, anchorProblemText, anchorReference } from "../core/anchor";
 import { logicalDayEnd } from "../core/dates";
 import { ReviewSession } from "../core/reviewSession";
 import { previewIntervals } from "../core/scheduler";
-import { buildQueue, countDue, overdueDays } from "../core/stats";
+import { buildQueueForSettings, overdueDays } from "../core/stats";
 import { Card, Grade, GRADES, GRADE_HOTKEYS, GRADE_LABELS } from "../core/types";
 import { CardService } from "../services/cardService";
 import { resolveCard } from "../vault/resolver";
@@ -44,12 +45,7 @@ export class ReviewModal extends Modal {
     const queue =
       initialQueue && initialQueue.length > 0
         ? initialQueue
-        : buildQueue(
-            service.getCards(),
-            Date.now(),
-            service.getSettings().dayStartHour,
-            service.getSettings().newCardsPerDay,
-          );
+        : buildQueueForSettings(service.getCards(), Date.now(), service.getSettings());
     this.session = new ReviewSession(service, queue);
   }
 
@@ -199,7 +195,7 @@ export class ReviewModal extends Modal {
       this.service.clearMissing(next);
       this.promptEl.setText(resolved.prompt);
       this.pendingAnswer = resolved.answer;
-      this.cardStateEl.setText(this.describeState(next));
+      this.cardStateEl.setText(`${this.describeState(next)} \u00b7 ${anchorLabel(next.anchor)}`);
       return;
     }
 
@@ -210,14 +206,17 @@ export class ReviewModal extends Modal {
     this.rescheduleBtn.addClass("srg-hidden");
     const message =
       resolved.status === "missing-file"
-        ? "The note for this plant is missing. It may have been moved, renamed or deleted."
-        : "This plant's heading is gone from its note.";
+        ? `The note for this plant is missing. It may have been moved, renamed or deleted. This plant is anchored to ${anchorProblemText(next)}.`
+        : `This plant is anchored to ${anchorProblemText(next)}, which is gone from its note. If you edited the marker by hand, put it back or remove the plant.`;
     this.errorEl.removeClass("srg-hidden");
     this.errorEl.createEl("div", { text: message });
+    this.errorEl.createEl("div", { cls: "srg-error-anchor", text: anchorLabel(next.anchor) });
     const actions = this.errorEl.createDiv({ cls: "srg-error-actions" });
     const skip = actions.createEl("button", { text: "Skip for now" });
     skip.addEventListener("click", () => void this.showNext());
-    const remove = actions.createEl("button", { text: "Remove plant" });
+    const copy = actions.createEl("button", { text: "Copy anchor" });
+    copy.addEventListener("click", () => void this.copyAnchor(next));
+    const remove = actions.createEl("button", { text: "Move to trash" });
     remove.addEventListener("click", () => {
       this.service.remove(next, () => void this.showNext());
     });
@@ -226,7 +225,7 @@ export class ReviewModal extends Modal {
   private describeState(card: Card): string {
     const settings = this.service.getSettings();
     const now = Date.now();
-    if (card.reps === 0) return "A fresh seed - first review.";
+    if (card.reps === 0 && card.firstReview === null) return "A fresh seed - first review";
     const late = overdueDays(card.due, now, settings.dayStartHour);
     const dueText =
       late > 0
@@ -268,6 +267,17 @@ export class ReviewModal extends Modal {
     else this.undoBtn.addClass("srg-hidden");
   }
 
+  private async copyAnchor(card: Card): Promise<void> {
+    const reference = anchorReference(card);
+    try {
+      await navigator.clipboard.writeText(reference);
+      new Notice(`Copied ${anchorLabel(card.anchor)}.`);
+    } catch (error) {
+      console.error("[Spaced Repetition Garden] Could not copy the anchor:", error);
+      new Notice(reference, 12000);
+    }
+  }
+
   private renderSummary(): void {
     this.revealed = false;
     this.promptEl.setText("");
@@ -289,7 +299,7 @@ export class ReviewModal extends Modal {
     this.summaryEl.removeClass("srg-hidden");
 
     const settings = this.service.getSettings();
-    const due = countDue(this.service.getCards(), Date.now(), settings.dayStartHour);
+    const due = buildQueueForSettings(this.service.getCards(), Date.now(), settings).length;
     this.summaryEl.createEl("div", {
       text: `Reviewed ${this.session.reviewed} ${
         this.session.reviewed === 1 ? "plant" : "plants"
